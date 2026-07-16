@@ -1,19 +1,23 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
+import { Folder } from '@element-plus/icons-vue'
 import TabBar from '../components/TabBar.vue'
 import FileSidebar from '../components/FileSidebar.vue'
 import MarkdownEditor from '../components/MarkdownEditor.vue'
 import { api } from '../api'
 import { useToast } from '../composables/useToast'
+import { useMediaQuery } from '../composables/useMediaQuery'
 
 const { showToast } = useToast()
+const isMobile = useMediaQuery('(max-width: 767px)')
 
 const tabs = ref([])
 const activeTab = ref('')
 const files = ref([])
 const activeFile = ref('')
 const busy = ref(false)
+const sidebarOpen = ref(false)
 
 async function refreshTabs(prefer) {
   const data = await api.getTabs()
@@ -111,6 +115,7 @@ async function onAddFile() {
     const data = await api.createFile(activeTab.value, trimmed)
     await refreshFiles(data.name)
     showToast(`已创建：md/${activeTab.value}/${data.name}`, 'success')
+    if (isMobile.value) sidebarOpen.value = false
   } catch (err) {
     showToast(err.message, 'error')
   } finally {
@@ -159,8 +164,17 @@ async function onRemoveFile(file) {
   }
 }
 
+function onSelectFile(file) {
+  activeFile.value = file
+  if (isMobile.value) sidebarOpen.value = false
+}
+
 watch(activeTab, () => {
   refreshFiles().catch((err) => showToast(err.message, 'error'))
+})
+
+watch(isMobile, (mobile) => {
+  if (!mobile) sidebarOpen.value = false
 })
 
 onMounted(async () => {
@@ -175,26 +189,59 @@ onMounted(async () => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col" :class="{ 'cursor-progress': busy }">
-    <TabBar
-      :tabs="tabs"
-      :active-tab="activeTab"
-      @select="activeTab = $event"
-      @add="onAddTab"
-      @remove="onRemoveTab"
-    />
+    <div class="flex min-h-10 shrink-0 items-stretch border-b border-border bg-surface">
+      <el-button
+        v-if="tabs.length"
+        class="!m-0 !h-auto !rounded-none border-0 border-r border-border px-3 md:!hidden"
+        :icon="Folder"
+        text
+        title="文件列表"
+        aria-label="打开文件列表"
+        @click="sidebarOpen = true"
+      />
+      <TabBar
+        class="min-w-0 flex-1"
+        :tabs="tabs"
+        :active-tab="activeTab"
+        @select="activeTab = $event"
+        @add="onAddTab"
+        @remove="onRemoveTab"
+      />
+    </div>
 
     <div class="flex min-h-0 flex-1">
+      <FileSidebar
+        v-if="tabs.length && !isMobile"
+        :files="files"
+        :active-file="activeFile"
+        :tab-name="activeTab"
+        @select="onSelectFile"
+        @add="onAddFile"
+        @rename="onRenameFile"
+        @remove="onRemoveFile"
+      />
+
+      <MarkdownEditor :tab="activeTab" :file="activeFile" />
+    </div>
+
+    <el-drawer
+      v-model="sidebarOpen"
+      title="文件"
+      direction="ltr"
+      size="80%"
+      class="file-drawer"
+      append-to-body
+    >
       <FileSidebar
         v-if="tabs.length"
         :files="files"
         :active-file="activeFile"
         :tab-name="activeTab"
-        @select="activeFile = $event"
+        @select="onSelectFile"
         @add="onAddFile"
         @rename="onRenameFile"
         @remove="onRemoveFile"
       />
-      <MarkdownEditor :tab="activeTab" :file="activeFile" />
-    </div>
+    </el-drawer>
   </div>
 </template>

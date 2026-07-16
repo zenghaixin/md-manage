@@ -1,6 +1,6 @@
 <script setup>
 import { nextTick, ref } from 'vue'
-import { Plus, Close } from '@element-plus/icons-vue'
+import { Close } from '@element-plus/icons-vue'
 
 const props = defineProps({
   files: { type: Array, default: () => [] },
@@ -13,6 +13,8 @@ const emit = defineEmits(['select', 'add', 'remove', 'rename'])
 const renamingFile = ref('')
 const renameDraft = ref('')
 const renameInput = ref(null)
+
+let longPressTimer = null
 
 function displayName(file) {
   return file.replace(/\.md$/, '')
@@ -58,28 +60,38 @@ function onRenameKeydown(e, file) {
 }
 
 function onItemClick(file, e) {
-  // 双击时忽略第二次 click，避免干扰重命名
   if (e.detail > 1) return
   emit('select', file)
+}
+
+function onTouchStart(file) {
+  clearTimeout(longPressTimer)
+  longPressTimer = setTimeout(() => {
+    startRename(file)
+  }, 500)
+}
+
+function onTouchEnd() {
+  clearTimeout(longPressTimer)
+  longPressTimer = null
 }
 </script>
 
 <template>
-  <aside class="flex w-60 shrink-0 flex-col min-h-0 border-r border-border bg-surface">
-    <div class="flex items-center justify-between border-b border-border px-3.5 py-3.5">
+  <aside class="file-sidebar flex w-full min-h-0 flex-col border-r border-border bg-surface md:w-60 md:shrink-0">
+    <div class="flex items-center border-b border-border px-3.5 py-3">
       <el-button
-        :icon="Plus"
-        circle
         size="small"
         type="primary"
         plain
         :disabled="!tabName"
-        title="新建 Markdown 文件"
         @click="emit('add')"
-      />
+      >
+        新增md
+      </el-button>
     </div>
 
-    <ul v-if="files.length" class="m-0 flex-1 list-none overflow-y-auto p-2">
+    <ul v-if="files.length" class="m-0 flex-1 list-none overflow-y-auto overscroll-contain p-2">
       <li v-for="file in files" :key="file" class="mb-0.5">
         <div
           v-if="renamingFile === file"
@@ -88,7 +100,7 @@ function onItemClick(file, e) {
           <input
             :ref="setRenameInput"
             v-model="renameDraft"
-            class="min-w-0 flex-1 border-none bg-transparent text-sm text-ink outline-none"
+            class="min-w-0 flex-1 border-none bg-transparent text-base text-ink outline-none md:text-sm"
             spellcheck="false"
             @keydown="onRenameKeydown($event, file)"
             @blur="commitRename(file)"
@@ -98,15 +110,19 @@ function onItemClick(file, e) {
 
         <div
           v-else
-          class="group flex w-full cursor-pointer items-center gap-1 rounded-lg border border-transparent px-2.5 py-2 text-left text-sm transition-colors"
+          class="group flex min-h-11 w-full cursor-pointer items-center gap-1 rounded-lg border border-transparent px-2.5 py-2.5 text-left text-sm transition-colors md:min-h-0 md:py-2"
           :class="
             isActive(file)
               ? 'border-accent/30 bg-accent-soft font-medium text-accent'
-              : 'bg-transparent text-ink hover:bg-surface-hover'
+              : 'bg-transparent text-ink active:bg-surface-hover hover:bg-surface-hover'
           "
-          title="双击重命名"
+          title="双击或长按重命名"
           @click="onItemClick(file, $event)"
           @dblclick.prevent="startRename(file)"
+          @touchstart.passive="onTouchStart(file)"
+          @touchend="onTouchEnd"
+          @touchmove="onTouchEnd"
+          @touchcancel="onTouchEnd"
         >
           <span class="min-w-0 flex-1 truncate select-none">{{ displayName(file) }}</span>
           <span
@@ -114,7 +130,7 @@ function onItemClick(file, e) {
             :class="isActive(file) ? 'text-accent/70' : 'text-muted'"
           >.md</span>
           <el-icon
-            class="w-4 text-muted opacity-0 transition-opacity group-hover:opacity-60 hover:!text-danger hover:!opacity-100"
+            class="w-5 shrink-0 text-muted opacity-70 transition-opacity md:w-4 md:opacity-0 md:group-hover:opacity-60 hover:!text-danger hover:!opacity-100"
             title="删除文件"
             @click.stop="emit('remove', file)"
           >

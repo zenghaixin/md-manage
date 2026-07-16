@@ -218,27 +218,27 @@ defineExpose({ saveFile })
 
 <template>
   <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
-    <div v-if="!tab || !file" class="m-auto max-w-md p-8 text-center">
-      <h2 class="mb-3 font-display text-xl font-semibold text-ink">
+    <div v-if="!tab || !file" class="m-auto max-w-md px-5 py-8 text-center">
+      <h2 class="mb-3 font-display text-lg font-semibold text-ink sm:text-xl">
         选择或新建一个 Markdown 文件
       </h2>
-      <p class="m-0 text-[0.95rem] leading-relaxed text-muted">
-        顶部标签对应文件夹，左侧文件对应
+      <p class="m-0 text-sm leading-relaxed text-muted sm:text-[0.95rem]">
+        顶部标签对应文件夹，文件列表中的
         <code class="rounded bg-surface px-1.5 py-0.5 font-mono text-[0.85em]">.md</code>
-        文档。支持即时渲染编辑与源代码切换，内容每 {{ AUTOSAVE_MS / 1000 }} 秒自动保存。
+        文档可编辑。支持即时渲染与源代码切换，内容每 {{ AUTOSAVE_MS / 1000 }} 秒自动保存。
       </p>
     </div>
 
     <template v-else>
       <div
-        class="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-2.5"
+        class="flex flex-col gap-2 border-b border-border bg-surface px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4"
       >
         <div class="flex min-w-0 items-baseline gap-1.5 text-sm">
           <span class="text-muted">{{ tab }}</span>
           <span class="text-border-strong">/</span>
           <span class="truncate font-mono text-ink">{{ file }}</span>
         </div>
-        <div class="flex shrink-0 items-center gap-3">
+        <div class="flex shrink-0 flex-wrap items-center gap-2 sm:gap-3">
           <span v-if="error" class="text-xs text-danger">{{ error }}</span>
           <el-radio-group
             :model-value="viewMode"
@@ -246,7 +246,7 @@ defineExpose({ saveFile })
             @update:model-value="setViewMode"
           >
             <el-radio-button value="edit">编辑</el-radio-button>
-            <el-radio-button value="source">源代码</el-radio-button>
+            <el-radio-button value="source">源码</el-radio-button>
           </el-radio-group>
           <el-button
             type="primary"
@@ -255,7 +255,7 @@ defineExpose({ saveFile })
             :loading="saving"
             @click="saveFile"
           >
-            立即保存
+            保存
           </el-button>
         </div>
       </div>
