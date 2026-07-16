@@ -13,7 +13,7 @@ dist-ssr
 *.local
 
 # 本地文档内容
-docs/
+md/
 
 # Editor directories and files
 .vscode/*

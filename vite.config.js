@@ -14,7 +14,7 @@ export default defineConfig({
     },
     // 文档目录会被 API 自动保存写入，勿监听以免整页刷新
     watch: {
-      ignored: ['**/docs/**'],
+      ignored: ['**/md/**'],
     },
   },
 })

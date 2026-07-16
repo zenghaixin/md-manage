@@ -5,7 +5,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DOCS_ROOT = path.resolve(__dirname, '../docs')
+const DOCS_ROOT = path.resolve(__dirname, '../md')
 const META_FILE = path.join(DOCS_ROOT, '.tabs.json')
 
 const app = express()

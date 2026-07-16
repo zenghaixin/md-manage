@@ -62,7 +62,7 @@ async function onAddTab() {
   try {
     await api.createTab(trimmed)
     await refreshTabs(trimmed)
-    showToast(`已创建标签文件夹：docs/${trimmed}`, 'success')
+    showToast(`已创建标签文件夹：md/${trimmed}`, 'success')
   } catch (err) {
     showToast(err.message, 'error')
   } finally {
@@ -93,7 +93,7 @@ async function onRemoveTab(tab) {
       activeFile.value = ''
     }
     await refreshTabs()
-    showToast(`已删除：docs/${tab}`, 'success')
+    showToast(`已删除：md/${tab}`, 'success')
   } catch (err) {
     showToast(err.message, 'error')
   } finally {
@@ -110,7 +110,7 @@ async function onAddFile() {
   try {
     const data = await api.createFile(activeTab.value, trimmed)
     await refreshFiles(data.name)
-    showToast(`已创建：docs/${activeTab.value}/${data.name}`, 'success')
+    showToast(`已创建：md/${activeTab.value}/${data.name}`, 'success')
   } catch (err) {
     showToast(err.message, 'error')
   } finally {
