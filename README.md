@@ -9,9 +9,13 @@ npm install
 npm run dev
 ```
 
+`npm run dev` 会同时启动前端和文件 API。
+
 - 前端：http://localhost:5173
 - 文件 API：http://localhost:3001
 - 文档根目录：项目下的 `md/`
+
+也可分开启动：`npm run dev:api` / `npm run dev:web`
 
 ## 功能
 
