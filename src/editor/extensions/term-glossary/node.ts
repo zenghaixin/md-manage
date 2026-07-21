@@ -3,7 +3,7 @@ import type { ResolvedPos } from '@tiptap/pm/model'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import { TERM_GLOSSARY_ID, TERM_NODE_NAME } from './constants'
-import { TERM_GLOSSARY_STYLES } from './styles'
+import { ensureTermGlossaryStyles } from './styles'
 import TermNodeView from './TermNodeView.vue'
 
 declare module '@tiptap/core' {
@@ -12,21 +12,6 @@ declare module '@tiptap/core' {
       insertTermGlossary: () => ReturnType
     }
   }
-}
-
-const STYLE_ATTR = 'data-ext-style'
-
-function ensureStyles(css: string): void {
-  if (typeof document === 'undefined') return
-  let el = document.querySelector(
-    `style[${STYLE_ATTR}="${TERM_GLOSSARY_ID}"]`,
-  ) as HTMLStyleElement | null
-  if (!el) {
-    el = document.createElement('style')
-    el.setAttribute(STYLE_ATTR, TERM_GLOSSARY_ID)
-    document.head.appendChild(el)
-  }
-  el.textContent = css
 }
 
 function findTermDepth($from: ResolvedPos, name: string): number {
@@ -90,10 +75,13 @@ export const TermGlossaryNode = Node.create({
 
   addNodeView() {
     return VueNodeViewRenderer(TermNodeView, {
-      // 标题 input 内的事件全部交给浏览器，避免 PM 抢焦点
+      // 标题 / 关联标签内的事件交给浏览器，避免 PM 抢焦点
       stopEvent: ({ event }) => {
         const t = event.target as HTMLElement | null
-        return !!t?.closest?.('.ext-term-title')
+        return !!(
+          t?.closest?.('.ext-term-title') ||
+          t?.closest?.('.ext-term-related')
+        )
       },
       ignoreMutation: ({ mutation }) => {
         const t = mutation.target as Node | null
@@ -101,13 +89,16 @@ export const TermGlossaryNode = Node.create({
           t && t.nodeType === Node.TEXT_NODE
             ? t.parentElement
             : (t as HTMLElement | null)
-        return !!el?.closest?.('.ext-term-title')
+        return !!(
+          el?.closest?.('.ext-term-title') ||
+          el?.closest?.('.ext-term-related')
+        )
       },
     })
   },
 
   onCreate() {
-    ensureStyles(TERM_GLOSSARY_STYLES)
+    ensureTermGlossaryStyles()
   },
 
   markdownTokenName: TERM_NODE_NAME,
@@ -160,11 +151,8 @@ export const TermGlossaryNode = Node.create({
           tokens: [],
         }
       }
-      // 单换行扩成双换行，保证段落解析与往返一致
-      const forBlocks = body
-        .split('\n')
-        .map((line) => line.trimEnd())
-        .join('\n\n')
+      // 保留原文换行，交给 marked 块级解析（### / 列表 / 加粗等）
+      const forBlocks = body.replace(/\r\n/g, '\n')
 
       return {
         type: TERM_NODE_NAME,
@@ -248,6 +236,14 @@ export const TermGlossaryNode = Node.create({
             .run()
         }
 
+        // 标题内回车：新行改为普通段落
+        if ($from.parent.type.name === 'heading') {
+          if ($from.parent.content.size === 0) {
+            return editor.commands.setParagraph()
+          }
+          return editor.chain().splitBlock().setParagraph().run()
+        }
+
         return editor.commands.splitBlock()
       },
 
@@ -301,6 +297,10 @@ export const TermGlossaryNode = Node.create({
         }
 
         if ($from.index(depth) === 0 && $from.parentOffset === 0) {
+          // 标题行首退格：先降为段落，而不是选中整块词条
+          if ($from.parent.type.name === 'heading') {
+            return editor.commands.setParagraph()
+          }
           return editor.commands.setNodeSelection($from.before(depth))
         }
 

@@ -1,25 +1,51 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { TextSelection } from '@tiptap/pm/state'
 import { NodeViewContent, NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
+import { TERM_NODE_NAME } from './constants'
+import { findTitlesInText } from './syntax'
 
 const props = defineProps(nodeViewProps)
 
 const titleEl = ref(null)
 const editingTitle = ref(false)
 const localTitle = ref(String(props.node.attrs.title ?? ''))
+/** 驱动关联词条随文档更新重算 */
+const docTick = ref(0)
 
 watch(
   () => props.node.attrs.title,
   (value) => {
-    // 正在输入时不要回写，否则光标会被冲掉
     if (editingTitle.value) return
     localTitle.value = String(value ?? '')
   },
 )
 
+function bumpDoc() {
+  docTick.value += 1
+}
+
+onMounted(() => {
+  props.editor.on('update', bumpDoc)
+})
+
+onUnmounted(() => {
+  props.editor.off('update', bumpDoc)
+})
+
+const relatedTitles = computed(() => {
+  docTick.value
+  const self = String(props.node.attrs.title ?? '').trim()
+  const titles = []
+  props.editor.state.doc.descendants((node) => {
+    if (node.type.name !== TERM_NODE_NAME) return
+    const t = String(node.attrs.title ?? '').trim()
+    if (t) titles.push(t)
+  })
+  return findTitlesInText(props.node.textContent || '', titles, self)
+})
+
 function onTitleMouseDown(event) {
-  // 阻止冒泡即可；不要 preventDefault，否则点选不到正确光标位置
   event.stopPropagation()
   editingTitle.value = true
 }
@@ -62,6 +88,7 @@ function focusDescriptionStart() {
 function selectWholeTerm(event) {
   if (event.target.closest('.ext-term-title')) return
   if (event.target.closest('.ext-term-desc')) return
+  if (event.target.closest('.ext-term-related')) return
   const pos = props.getPos()
   if (typeof pos !== 'number') return
   event.preventDefault()
@@ -89,6 +116,22 @@ function onTitleKeydown(event) {
     }
   }
 }
+
+/** 点击关联标签 → 跳转到对应词条定义 */
+function onRelatedClick(title, event) {
+  event.preventDefault()
+  event.stopPropagation()
+  let targetPos = null
+  props.editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== TERM_NODE_NAME) return
+    if (String(node.attrs.title ?? '').trim() === title) {
+      targetPos = pos
+      return false
+    }
+  })
+  if (targetPos == null) return
+  props.editor.chain().focus().setNodeSelection(targetPos).scrollIntoView().run()
+}
 </script>
 
 <template>
@@ -111,6 +154,26 @@ function onTitleKeydown(event) {
       @input="onTitleInput"
       @keydown="onTitleKeydown"
     >
+
     <NodeViewContent class="ext-term-desc" as="div" />
+
+    <div
+      v-if="relatedTitles.length"
+      class="ext-term-related"
+      contenteditable="false"
+    >
+      <span class="ext-term-related-label">关联词条：</span>
+      <button
+        v-for="title in relatedTitles"
+        :key="title"
+        type="button"
+        class="ext-term-related-tag"
+        :title="`跳转到词条「${title}」`"
+        @click="onRelatedClick(title, $event)"
+        @mousedown.prevent
+      >
+        #{{ title }}
+      </button>
+    </div>
   </NodeViewWrapper>
 </template>

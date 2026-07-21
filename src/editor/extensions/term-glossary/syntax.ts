@@ -72,3 +72,44 @@ export function formatTermSource(title: string, description: string): string {
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
+
+/** 英文/数字词条用词边界，避免 HP 命中 PHP；中文等直接子串匹配 */
+export function titlePattern(title: string): RegExp {
+  const escaped = escapeRegExp(title)
+  if (/^[A-Za-z0-9_]+$/.test(title)) {
+    return new RegExp(`\\b${escaped}\\b`, 'g')
+  }
+  return new RegExp(escaped, 'g')
+}
+
+/**
+ * 在文本中查找命中的词条标题（长词优先、不重叠）。
+ * @param excludeTitle 排除自身标题（词条描述内不关联自己）
+ */
+export function findTitlesInText(
+  text: string,
+  titles: string[],
+  excludeTitle?: string,
+): string[] {
+  if (!text || !titles.length) return []
+  const sorted = [...titles]
+    .filter((t) => t && t !== excludeTitle)
+    .sort((a, b) => b.length - a.length)
+  const taken: Array<{ from: number; to: number }> = []
+  const found: string[] = []
+
+  for (const title of sorted) {
+    const re = titlePattern(title)
+    let m: RegExpExecArray | null
+    while ((m = re.exec(text)) !== null) {
+      const from = m.index
+      const to = from + m[0].length
+      if (taken.some((r) => from < r.to && to > r.from)) continue
+      taken.push({ from, to })
+      if (!found.includes(title)) found.push(title)
+      break
+    }
+  }
+  return found
+}
+

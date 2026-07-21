@@ -6,6 +6,7 @@ import { Markdown } from '@tiptap/markdown'
 import AppIcon from './AppIcon.vue'
 import { api } from '../api'
 import { fromStorageMarkdown, toStorageMarkdown } from '../editor/blankLines'
+import { HeadingBackspace } from '../editor/headingBackspace'
 import {
   getAllTiptapExtensions,
   readEditorMarkdown,
@@ -34,7 +35,7 @@ let loadToken = 0
 let applyingValue = false
 
 const editor = useEditor({
-  extensions: [StarterKit, Markdown, ...getAllTiptapExtensions()],
+  extensions: [StarterKit, Markdown, HeadingBackspace, ...getAllTiptapExtensions()],
   content: '',
   editorProps: {
     attributes: {
