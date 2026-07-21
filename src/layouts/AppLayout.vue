@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import { Setting } from '@element-plus/icons-vue'
+import AppIcon from '../components/AppIcon.vue'
 import SettingsModal from '../components/SettingsModal.vue'
 
 const settingsOpen = ref(false)
@@ -14,13 +14,14 @@ const settingsOpen = ref(false)
       <div class="font-display text-lg font-bold tracking-wide text-ink">md</div>
       <div class="flex-1" />
       <el-button
-        :icon="Setting"
         circle
         size="default"
         title="设置"
         aria-label="打开设置"
         @click="settingsOpen = true"
-      />
+      >
+        <AppIcon name="settings" :size="18" />
+      </el-button>
     </header>
 
     <main class="flex min-h-0 flex-1 flex-col">

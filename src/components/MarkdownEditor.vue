@@ -1,16 +1,24 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import Vditor from 'vditor'
-import 'vditor/dist/index.css'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { EditorContent, useEditor } from '@tiptap/vue-3'
+import StarterKit from '@tiptap/starter-kit'
+import { Markdown } from '@tiptap/markdown'
+import AppIcon from './AppIcon.vue'
 import { api } from '../api'
-import { useTheme } from '../composables/useTheme'
+import { fromStorageMarkdown, toStorageMarkdown } from '../editor/blankLines'
+import {
+  getAllTiptapExtensions,
+  readEditorMarkdown,
+} from '../editor/extensions'
 
 const props = defineProps({
   tab: { type: String, default: '' },
   file: { type: String, default: '' },
+  /** 左侧文件树是否可见 */
+  sidebarOpen: { type: Boolean, default: true },
 })
 
-const { resolvedTheme } = useTheme()
+const emit = defineEmits(['toggle-sidebar'])
 
 const content = ref('')
 const loading = ref(false)
@@ -19,84 +27,68 @@ const dirty = ref(false)
 const error = ref('')
 /** @type {import('vue').Ref<'edit' | 'source'>} */
 const viewMode = ref('edit')
-const editorHost = ref(null)
 
 const AUTOSAVE_MS = 3000
 let saveTimer = null
 let loadToken = 0
-/** @type {Vditor | null} */
-let vditor = null
 let applyingValue = false
-let vditorReady = false
 
-function vditorTheme() {
-  return resolvedTheme.value === 'dark' ? 'dark' : 'classic'
+const editor = useEditor({
+  extensions: [StarterKit, Markdown, ...getAllTiptapExtensions()],
+  content: '',
+  editorProps: {
+    attributes: {
+      class: 'tiptap-prose',
+      spellcheck: 'false',
+    },
+  },
+  onUpdate: ({ editor: ed }) => {
+    if (applyingValue) return
+    // 落盘用真空行，不把 &nbsp; 写进源码
+    content.value = toStorageMarkdown(ed.getMarkdown())
+    dirty.value = true
+  },
+})
+const editorReady = computed(() => !!editor.value && !editor.value.isDestroyed)
+
+const sourceTextarea = ref(null)
+const sourceGutter = ref(null)
+
+const sourceLineCount = computed(() => {
+  const text = content.value ?? ''
+  return text.length === 0 ? 1 : text.split('\n').length
+})
+
+function syncSourceGutterScroll() {
+  const ta = sourceTextarea.value
+  const gutter = sourceGutter.value
+  if (!ta || !gutter) return
+  gutter.scrollTop = ta.scrollTop
 }
 
-function destroyVditor() {
-  if (!vditor) return
-  vditor.destroy()
-  vditor = null
-  vditorReady = false
+function onSourceTextareaInput(event) {
+  content.value = event.target.value
+  dirty.value = true
 }
 
 function pullFromEditor() {
-  if (vditor && vditorReady && viewMode.value === 'edit') {
-    content.value = vditor.getValue()
+  if (editorReady.value && viewMode.value === 'edit') {
+    content.value = readEditorMarkdown(editor.value)
   }
 }
 
 function syncEditorValue(value) {
-  if (!vditor || !vditorReady || viewMode.value !== 'edit') return
-  const current = vditor.getValue()
-  if (current === value) return
+  if (!editorReady.value || viewMode.value !== 'edit') return
+  const storage = value || ''
+  const current = toStorageMarkdown(editor.value.getMarkdown())
+  if (current === storage) return
   applyingValue = true
-  vditor.setValue(value || '', true)
-  applyingValue = false
-}
-
-async function ensureVditor() {
-  if (vditor || !editorHost.value || viewMode.value !== 'edit') return
-
-  await nextTick()
-  if (!editorHost.value || viewMode.value !== 'edit') return
-
-  await new Promise((resolve) => {
-    vditor = new Vditor(editorHost.value, {
-      height: '100%',
-      mode: 'ir',
-      theme: vditorTheme(),
-      icon: 'ant',
-      placeholder: '',
-      cache: { enable: false },
-      toolbar: [],
-      toolbarConfig: { hide: true },
-      preview: {
-        theme: {
-          current: resolvedTheme.value === 'dark' ? 'dark' : 'light',
-        },
-        hljs: {
-          style: resolvedTheme.value === 'dark' ? 'github-dark' : 'github',
-        },
-      },
-      after: () => {
-        vditorReady = true
-        applyingValue = true
-        vditor?.setValue(content.value || '', true)
-        applyingValue = false
-        resolve()
-      },
-      input: (value) => {
-        if (applyingValue) return
-        content.value = value
-        dirty.value = true
-      },
-      blur: (value) => {
-        if (applyingValue) return
-        content.value = value
-      },
-    })
+  // 读入时把连续空行还原成 TipTap 空段
+  editor.value.commands.setContent(fromStorageMarkdown(storage), {
+    contentType: 'markdown',
+    emitUpdate: false,
   })
+  applyingValue = false
 }
 
 async function setViewMode(mode) {
@@ -105,27 +97,24 @@ async function setViewMode(mode) {
   pullFromEditor()
 
   if (mode === 'source') {
-    destroyVditor()
     viewMode.value = mode
     return
   }
 
   viewMode.value = mode
   await nextTick()
-  await ensureVditor()
   syncEditorValue(content.value)
-}
-
-function onSourceInput(value) {
-  content.value = value
-  dirty.value = true
 }
 
 async function loadFile() {
   if (!props.tab || !props.file) {
     content.value = ''
     dirty.value = false
-    destroyVditor()
+    if (editorReady.value) {
+      applyingValue = true
+      editor.value.commands.setContent('', { emitUpdate: false })
+      applyingValue = false
+    }
     return
   }
 
@@ -140,10 +129,16 @@ async function loadFile() {
     dirty.value = false
 
     if (viewMode.value === 'edit') {
-      if (vditor && vditorReady) {
+      await nextTick()
+      // useEditor 可能尚未就绪
+      if (editorReady.value) {
         syncEditorValue(data.content)
       } else {
-        await ensureVditor()
+        const stop = watch(editorReady, (ready) => {
+          if (!ready || token !== loadToken) return
+          syncEditorValue(data.content)
+          stop()
+        })
       }
     }
   } catch (err) {
@@ -194,11 +189,6 @@ watch(
   },
 )
 
-watch(resolvedTheme, (theme) => {
-  if (!vditor || !vditorReady) return
-  vditor.setTheme(theme === 'dark' ? 'dark' : 'classic', theme === 'dark' ? 'dark' : 'light')
-})
-
 onMounted(() => {
   loadFile()
   scheduleAutosave()
@@ -210,7 +200,7 @@ onUnmounted(() => {
     pullFromEditor()
     api.saveFile(props.tab, props.file, content.value).catch(() => {})
   }
-  destroyVditor()
+  editor.value?.destroy()
 })
 
 defineExpose({ saveFile })
@@ -223,64 +213,83 @@ defineExpose({ saveFile })
         选择或新建一个 Markdown 文件
       </h2>
       <p class="m-0 text-sm leading-relaxed text-muted sm:text-[0.95rem]">
-        顶部标签对应文件夹，文件列表中的
+        左侧文件树中选择文件夹下的
         <code class="rounded bg-surface px-1.5 py-0.5 font-mono text-[0.85em]">.md</code>
-        文档可编辑。支持即时渲染与源代码切换，内容每 {{ AUTOSAVE_MS / 1000 }} 秒自动保存。
+        文档即可编辑。支持即时渲染与源代码切换，内容每 {{ AUTOSAVE_MS / 1000 }} 秒自动保存。
       </p>
     </div>
 
-    <template v-else>
+    <div
+      v-else
+      class="md-editor relative min-h-0 flex-1"
+      :class="{ 'is-loading': loading }"
+    >
+      <EditorContent
+        v-show="viewMode === 'edit'"
+        :editor="editor"
+        class="tiptap-host h-full"
+      />
       <div
-        class="flex flex-col gap-2 border-b border-border bg-surface px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-4"
-      >
-        <div class="flex min-w-0 items-baseline gap-1.5 text-sm">
-          <span class="text-muted">{{ tab }}</span>
-          <span class="text-border-strong">/</span>
-          <span class="truncate font-mono text-ink">{{ file }}</span>
-        </div>
-        <div class="flex shrink-0 flex-wrap items-center gap-2 sm:gap-3">
-          <span v-if="error" class="text-xs text-danger">{{ error }}</span>
-          <el-radio-group
-            :model-value="viewMode"
-            size="small"
-            @update:model-value="setViewMode"
-          >
-            <el-radio-button value="edit">编辑</el-radio-button>
-            <el-radio-button value="source">源码</el-radio-button>
-          </el-radio-group>
-          <el-button
-            type="primary"
-            size="small"
-            :disabled="!dirty || saving"
-            :loading="saving"
-            @click="saveFile"
-          >
-            保存
-          </el-button>
-        </div>
-      </div>
-
-      <div
-        class="md-editor relative min-h-0 flex-1"
-        :class="{ 'is-loading': loading }"
+        v-show="viewMode === 'source'"
+        class="source-editor h-full"
       >
         <div
-          v-show="viewMode === 'edit'"
-          ref="editorHost"
-          class="vditor-host h-full"
-        />
-        <el-input
-          v-show="viewMode === 'source'"
-          class="editor-input h-full"
-          type="textarea"
-          :model-value="content"
+          ref="sourceGutter"
+          class="source-gutter"
+          aria-hidden="true"
+        >
+          <span
+            v-for="n in sourceLineCount"
+            :key="n"
+            class="source-gutter-line"
+          >{{ n }}</span>
+        </div>
+        <textarea
+          ref="sourceTextarea"
+          class="source-textarea"
+          :value="content"
           :disabled="loading"
-          :autosize="false"
-          resize="none"
           spellcheck="false"
-          @update:model-value="onSourceInput"
+          wrap="off"
+          @input="onSourceTextareaInput"
+          @scroll="syncSourceGutterScroll"
         />
       </div>
-    </template>
+    </div>
+
+    <div
+      class="flex shrink-0 items-center gap-1 border-t border-border bg-surface px-2 py-1"
+    >
+      <button
+        type="button"
+        class="inline-flex h-7 w-7 items-center justify-center rounded text-muted transition-colors hover:bg-surface-hover hover:text-ink"
+        :title="sidebarOpen ? '关闭侧边栏' : '打开侧边栏'"
+        :aria-label="sidebarOpen ? '关闭侧边栏' : '打开侧边栏'"
+        @click="emit('toggle-sidebar')"
+      >
+        <AppIcon :name="sidebarOpen ? 'sidebarFold' : 'sidebarExpand'" :size="16" />
+      </button>
+
+      <button
+        v-if="tab && file"
+        type="button"
+        class="inline-flex h-7 w-7 items-center justify-center rounded transition-colors"
+        :class="
+          viewMode === 'source'
+            ? 'bg-accent-soft text-accent'
+            : 'text-muted hover:bg-surface-hover hover:text-ink'
+        "
+        :title="viewMode === 'source' ? '切换到编辑' : '切换到源码'"
+        :aria-label="viewMode === 'source' ? '切换到编辑' : '切换到源码'"
+        :aria-pressed="viewMode === 'source'"
+        @click="setViewMode(viewMode === 'source' ? 'edit' : 'source')"
+      >
+        <AppIcon name="source" :size="16" />
+      </button>
+
+      <div class="flex-1" />
+
+      <span v-if="error" class="max-w-[40%] truncate text-xs text-danger">{{ error }}</span>
+    </div>
   </section>
 </template>

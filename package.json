@@ -11,11 +11,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@element-plus/icons-vue": "^2.3.2",
+    "@iconify/vue": "^5.0.1",
+    "@tiptap/core": "^3.28.0",
+    "@tiptap/markdown": "^3.28.0",
+    "@tiptap/pm": "^3.28.0",
+    "@tiptap/starter-kit": "^3.28.0",
+    "@tiptap/vue-3": "^3.28.0",
     "cors": "^2.8.6",
     "element-plus": "^2.14.3",
     "express": "^5.2.1",
-    "vditor": "^3.11.2",
     "vue": "^3.5.39",
     "vue-router": "^4.6.4"
   },

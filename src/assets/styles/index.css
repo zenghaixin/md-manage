@@ -3,8 +3,9 @@
  * 主题变量 / Tailwind 映射 / 基础样式 / 组件覆盖均在此管理
  */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,600;7..72,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Source+Sans+3:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Ubuntu:ital,wght@0,400;0,500;0,700;1,400&display=swap');
 @import 'tailwindcss';
+@import './typora-vue-prose.css';
 
 /* ---------- 主题变量 ---------- */
 
@@ -27,9 +28,10 @@
   --scroll-thumb: #a8b8c2;
   --toast-fg: #f7f4ef;
   --toast-shadow: rgba(28, 36, 28, 0.18);
-  --font-display: 'Literata', 'Songti SC', serif;
-  --font-body: 'DM Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  /* 与 typora-vue 文档区统一 */
+  --font-display: 'Ubuntu', 'Source Sans 3', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body: 'Ubuntu', 'Source Sans 3', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Fira Code', 'Roboto Mono', Consolas, monospace;
   --el-color-primary: #0d6e6e;
 }
 
@@ -52,6 +54,9 @@ html.dark {
   --scroll-thumb: #4a5c68;
   --toast-fg: #e6eef2;
   --toast-shadow: rgba(0, 0, 0, 0.45);
+  --font-display: 'Source Sans 3', 'Ubuntu', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body: 'Source Sans 3', 'Ubuntu', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Fira Code', 'Roboto Mono', Consolas, monospace;
   --el-color-primary: #3db8b0;
 
   /* Element Plus：深色下边框更清晰 */
@@ -81,9 +86,9 @@ html.dark {
   --color-warn: var(--warn);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
-  --font-display: 'Literata', 'Songti SC', serif;
-  --font-body: 'DM Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  --font-display: 'Ubuntu', 'Source Sans 3', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body: 'Ubuntu', 'Source Sans 3', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Fira Code', 'Roboto Mono', Consolas, monospace;
 }
 
 /* ---------- 基础样式 ---------- */
@@ -151,14 +156,19 @@ body {
 }
 
 @media (max-width: 767px) {
-  .md-editor .vditor-reset {
-    padding: 1rem 1rem 2rem;
+  .md-editor .tiptap-prose {
+    padding: 1rem 1.15rem 2.5rem;
     font-size: 0.95rem;
   }
 
-  .md-editor .editor-input .el-textarea__inner {
+  .md-editor .source-textarea {
     padding: 1rem 1rem 2rem;
     font-size: 16px; /* 避免 iOS 聚焦自动放大 */
+  }
+
+  .md-editor .source-gutter {
+    padding: 1rem 0.5rem 2rem 0.65rem;
+    font-size: 16px;
   }
 
   .el-message-box {
@@ -203,7 +213,7 @@ html.dark .el-textarea__inner:focus {
   box-shadow: 0 0 0 1px var(--el-color-primary) inset;
 }
 
-/* Markdown 编辑器（Vditor）：铺满内容区 */
+/* Markdown 编辑器壳层（正文排版见 typora-vue-prose.css） */
 .md-editor {
   background: var(--bg);
 }
@@ -213,52 +223,55 @@ html.dark .el-textarea__inner:focus {
   pointer-events: none;
 }
 
-.md-editor .vditor-host,
-.md-editor .vditor {
-  height: 100% !important;
-  border: none;
-  border-radius: 0;
+.md-editor .tiptap-host {
+  height: 100%;
+  overflow: auto;
 }
 
-.md-editor .vditor-toolbar {
-  display: none !important;
-}
-
-.md-editor .vditor-content {
+.md-editor .source-editor {
+  display: flex;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
-.md-editor .vditor-ir,
-.md-editor .vditor-sv,
-.md-editor .vditor-wysiwyg {
-  background: transparent;
+.md-editor .source-gutter {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-align: right;
+  user-select: none;
+  padding: 1.25rem 0.65rem 2rem 0.85rem;
+  border-right: 1px solid var(--border, color-mix(in srgb, var(--ink) 12%, transparent));
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  color: var(--muted, #94a3b8);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  line-height: 1.7;
 }
 
-.md-editor .vditor-reset {
-  font-family: var(--font-body);
-  color: var(--ink);
-  padding: 1.25rem 1.75rem 2rem;
+.md-editor .source-gutter-line {
+  display: block;
+  min-width: 1.6em;
 }
 
-.md-editor .editor-input {
+.md-editor .source-textarea {
+  flex: 1 1 auto;
+  min-width: 0;
   height: 100%;
-}
-
-.md-editor .editor-input .el-textarea {
-  height: 100%;
-}
-
-.md-editor .editor-input .el-textarea__inner {
-  height: 100% !important;
   border: none;
-  border-radius: 0;
-  box-shadow: none !important;
+  outline: none;
+  resize: none;
   background: transparent;
   color: var(--ink);
   font-family: var(--font-mono);
   font-size: 0.95rem;
   line-height: 1.7;
-  padding: 1.25rem 1.5rem 2rem;
+  padding: 1.25rem 1.5rem 2rem 1rem;
   tab-size: 2;
-  resize: none;
+  white-space: pre;
+  overflow: auto;
+}
+
+.md-editor .source-textarea:disabled {
+  opacity: 0.65;
 }
