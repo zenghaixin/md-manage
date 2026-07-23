@@ -1,6 +1,9 @@
 /**
  * 编辑器自定义语法扩展的统一契约。
  * 每个扩展独占 `src/editor/extensions/<id>/`，并通过 `index.ts` 导出符合此接口的对象。
+ *
+ * 核心壳（MarkdownEditor / DocsPage / main）不得 import 具体扩展；
+ * 扩展通过本契约的钩子挂到生命周期上。
  */
 
 import type { AnyExtension } from '@tiptap/core'
@@ -44,6 +47,13 @@ export interface GlobalMatchRule {
   findMatches(text: string, nodes?: ExtensionNode[]): GlobalMatch[]
 }
 
+/** 文件上下文（存盘 / 打开钩子共用） */
+export interface FileContext {
+  tab: string
+  file: string
+  markdown: string
+}
+
 /**
  * 统一扩展接口。
  * 每个扩展文件夹内的 `index.ts` 必须导出符合此形状的默认或命名对象。
@@ -73,4 +83,16 @@ export interface MarkdownExtension {
    * 返回用于全局文本匹配的规则（在正文其他地方匹配「标题」）。
    */
   getGlobalMatchRule(): GlobalMatchRule
+
+  /**
+   * 应用启动后（Pinia 已就绪）调用。
+   * 用于加载扩展全局数据、与本地文件校验同步等。
+   */
+  onAppStart?(): void | Promise<void>
+
+  /**
+   * 某个 .md 文件成功写入磁盘后调用。
+   * 扩展在此做与本文件相关的副作用（如同步词条表），不要在 MarkdownEditor 里写死。
+   */
+  onFileSave?(ctx: FileContext): void | Promise<void>
 }

@@ -3,9 +3,20 @@ async function request(url, options = {}) {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
   })
-  const data = await res.json().catch(() => ({}))
+  const text = await res.text()
+  let data = {}
+  try {
+    data = text ? JSON.parse(text) : {}
+  } catch {
+    data = {}
+  }
   if (!res.ok) {
-    throw new Error(data.error || `请求失败 (${res.status})`)
+    const hint =
+      data.error ||
+      (res.status === 404
+        ? `接口不存在 (${url})，请重启 API：npm run dev`
+        : text?.slice?.(0, 120) || `请求失败 (${res.status})`)
+    throw new Error(hint)
   }
   return data
 }
@@ -36,5 +47,30 @@ export const api = {
   deleteFile: (tab, file) =>
     request(`/api/tabs/${encodeURIComponent(tab)}/files/${encodeURIComponent(file)}`, {
       method: 'DELETE',
+    }),
+
+  getGlossary: () => request('/api/glossary'),
+  /** 整表写回（含 ignoreContexts / formerTitles） */
+  putGlossary: (body) =>
+    request('/api/glossary', { method: 'PUT', body: JSON.stringify(body) }),
+  /** 扫描全部 .md 并与 glossary.json 校验同步 */
+  syncGlossary: () => request('/api/glossary/sync', { method: 'POST' }),
+  /**
+   * 按文件更新词条
+   * @param {{ sourcePath: string, terms: Array<{ title: string, description: string }> }} body
+   */
+  patchGlossaryFile: (body) =>
+    request('/api/glossary/file', { method: 'PATCH', body: JSON.stringify(body) }),
+  /** 改名后同步已确认引用并返回冲突列表 */
+  renameGlossarySync: (body) =>
+    request('/api/glossary/rename-sync', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  /** 批量应用冲突：确认 term[] / 写入 ignoreContexts */
+  applyGlossaryConflicts: (body) =>
+    request('/api/glossary/apply-conflicts', {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 }

@@ -7,6 +7,13 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DOCS_ROOT = path.resolve(__dirname, '../md')
 const META_FILE = path.join(DOCS_ROOT, '.tabs.json')
+const GLOSSARY_FILE = path.resolve(
+  __dirname,
+  '../src/editor/extensions/term-glossary/glossary.json',
+)
+
+const TERM_BLOCK_RE =
+  /:::[\t ]*term[\t ]*\[([^\]]*)\]\s*([\s\S]*?)\s*:::/gi
 
 const app = express()
 const PORT = 3001
@@ -282,8 +289,607 @@ app.delete('/api/tabs/:tab/files/:file', async (req, res) => {
   }
 })
 
+function emptyGlossary() {
+  return { lastUpdated: '', terms: {} }
+}
+
+async function readGlossaryFile() {
+  try {
+    const raw = await fs.readFile(GLOSSARY_FILE, 'utf-8')
+    const data = JSON.parse(raw || '{}')
+    return {
+      lastUpdated: typeof data.lastUpdated === 'string' ? data.lastUpdated : '',
+      terms: data.terms && typeof data.terms === 'object' ? data.terms : {},
+    }
+  } catch (err) {
+    if (err.code === 'ENOENT') return emptyGlossary()
+    throw err
+  }
+}
+
+function normalizeIgnoreContexts(value) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  for (const item of value) {
+    const s = String(item ?? '').trim()
+    if (s && !out.includes(s)) out.push(s)
+  }
+  return out
+}
+
+function normalizeFormerTitles(value) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  for (const item of value) {
+    const s = String(item ?? '').trim()
+    if (s && !out.includes(s)) out.push(s)
+  }
+  return out
+}
+
+/**
+ * 旧版 boolean → []；数组则规范化为冲突项列表。
+ */
+function normalizePendingManualConfirm(value) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  const seen = new Set()
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue
+    const id = String(raw.id ?? '').trim()
+    const sourcePath = String(raw.sourcePath ?? '').trim()
+    const hit = String(raw.hit ?? '').trim()
+    if (!id || !sourcePath || !hit || seen.has(id)) continue
+    const from = Number(raw.from)
+    const to = Number(raw.to)
+    seen.add(id)
+    out.push({
+      id,
+      sourcePath,
+      kind: String(raw.kind ?? '').trim() || 'new-title',
+      hit,
+      context: String(raw.context ?? '').trim() || hit,
+      from: Number.isFinite(from) ? from : 0,
+      to: Number.isFinite(to) ? to : 0,
+    })
+  }
+  return out
+}
+
+/** 文案本身已成为词条标题时，从 ignore / former 中移除冲突项 */
+function scrubIgnoreContexts(terms) {
+  const titles = new Set(Object.keys(terms || {}))
+  const next = {}
+  for (const [key, term] of Object.entries(terms || {})) {
+    next[key] = {
+      ...term,
+      ignoreContexts: normalizeIgnoreContexts(term?.ignoreContexts).filter(
+        (c) => c === key || !titles.has(c),
+      ),
+      formerTitles: normalizeFormerTitles(term?.formerTitles).filter(
+        (f) => f !== key && !titles.has(f),
+      ),
+      pendingManualConfirm: normalizePendingManualConfirm(
+        term?.pendingManualConfirm,
+      ),
+    }
+  }
+  return next
+}
+
+async function writeGlossaryFile(data) {
+  const terms = scrubIgnoreContexts(
+    data.terms && typeof data.terms === 'object' ? data.terms : {},
+  )
+  const payload = {
+    lastUpdated: new Date().toISOString(),
+    terms,
+  }
+  await fs.mkdir(path.dirname(GLOSSARY_FILE), { recursive: true })
+  await fs.writeFile(GLOSSARY_FILE, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8')
+  return payload
+}
+
+/**
+ * 扫描全部 Markdown，得到 title → term。
+ * 保留已有 ignoreContexts / formerTitles。
+ */
+async function scanMarkdownTerms(existingTerms = {}) {
+  const tabs = await listTabs()
+  /** @type {Record<string, object>} */
+  const terms = {}
+
+  for (const tab of tabs) {
+    const dir = tabDir(tab)
+    let entries
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue
+      const base = entry.name.replace(/\.md$/, '')
+      if (!isSafeName(base)) continue
+
+      let content
+      try {
+        content = await fs.readFile(filePath(tab, entry.name), 'utf-8')
+      } catch {
+        continue
+      }
+
+      const sourcePath = `${tab}/${entry.name}`
+      TERM_BLOCK_RE.lastIndex = 0
+      let match
+      while ((match = TERM_BLOCK_RE.exec(content)) !== null) {
+        const title = match[1].trim()
+        if (!title) continue
+        const prev = existingTerms[title]
+        terms[title] = {
+          title,
+          description: match[2].replace(/\r\n/g, '\n').trim(),
+          sourcePath,
+          ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
+          formerTitles: normalizeFormerTitles(prev?.formerTitles),
+          pendingManualConfirm: normalizePendingManualConfirm(
+            prev?.pendingManualConfirm,
+          ),
+        }
+      }
+    }
+  }
+
+  return scrubIgnoreContexts(terms)
+}
+
+function glossaryEqual(a, b) {
+  return JSON.stringify(a?.terms || {}) === JSON.stringify(b?.terms || {})
+}
+
+/** 读取 glossary.json */
+app.get('/api/glossary', async (_req, res) => {
+  try {
+    res.json(await readGlossaryFile())
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/** 整表写回 glossary.json */
+app.put('/api/glossary', async (req, res) => {
+  try {
+    const terms = req.body?.terms
+    if (!terms || typeof terms !== 'object') {
+      return res.status(400).json({ error: 'terms 格式错误' })
+    }
+    const normalized = {}
+    for (const [key, term] of Object.entries(terms)) {
+      const title = String(term?.title ?? key).trim()
+      if (!title) continue
+      normalized[title] = {
+        title,
+        description: String(term?.description ?? '').trim(),
+        sourcePath: String(term?.sourcePath ?? ''),
+        ignoreContexts: normalizeIgnoreContexts(term?.ignoreContexts),
+        formerTitles: normalizeFormerTitles(term?.formerTitles),
+        pendingManualConfirm: normalizePendingManualConfirm(
+          term?.pendingManualConfirm,
+        ),
+      }
+    }
+    res.json(await writeGlossaryFile({ terms: normalized }))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * 启动校验：扫描全部 .md 的 ::: term，与 glossary.json 比对，有变动则写回。
+ */
+app.post('/api/glossary/sync', async (_req, res) => {
+  try {
+    const current = await readGlossaryFile()
+    const fromMd = await scanMarkdownTerms(current.terms || {})
+    const next = { lastUpdated: current.lastUpdated, terms: fromMd }
+    if (!glossaryEqual(current, next)) {
+      res.json(await writeGlossaryFile(next))
+    } else {
+      res.json(current)
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * 单文件保存后同步：更新该 sourcePath 下的词条。
+ * 保留 ignoreContexts / formerTitles。
+ */
+app.patch('/api/glossary/file', async (req, res) => {
+  try {
+    const sourcePath = String(req.body?.sourcePath || '').trim()
+    const fileTerms = Array.isArray(req.body?.terms) ? req.body.terms : null
+    if (!sourcePath || !fileTerms) {
+      return res.status(400).json({ error: 'sourcePath / terms 格式错误' })
+    }
+
+    const data = await readGlossaryFile()
+    const nextTerms = { ...data.terms }
+    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[] }>} */
+    const preserved = {}
+
+    for (const [key, term] of Object.entries(nextTerms)) {
+      if (term?.sourcePath === sourcePath) {
+        preserved[key] = {
+          ignoreContexts: normalizeIgnoreContexts(term.ignoreContexts),
+          formerTitles: normalizeFormerTitles(term.formerTitles),
+          pendingManualConfirm: normalizePendingManualConfirm(
+            term.pendingManualConfirm,
+          ),
+        }
+        delete nextTerms[key]
+      }
+    }
+
+    const newTitles = fileTerms
+      .map((item) => String(item?.title ?? '').trim())
+      .filter(Boolean)
+    const removedTitles = Object.keys(preserved).filter((t) => !newTitles.includes(t))
+    const addedTitles = newTitles.filter((t) => !preserved[t])
+    /** 同一文件内一对一改名：把旧名并入新名的 formerTitles */
+    const renameMap = new Map()
+    if (removedTitles.length === 1 && addedTitles.length === 1) {
+      renameMap.set(addedTitles[0], removedTitles[0])
+    }
+
+    for (const item of fileTerms) {
+      const title = String(item?.title ?? '').trim()
+      if (!title) continue
+      const fromPrev = preserved[title]
+      const fromData = data.terms[title]
+      const renamedFrom = renameMap.get(title)
+      const fromOld = renamedFrom ? preserved[renamedFrom] : null
+      const former = normalizeFormerTitles([
+        ...(fromPrev?.formerTitles || []),
+        ...(fromData && !renamedFrom
+          ? normalizeFormerTitles(fromData.formerTitles)
+          : []),
+        ...(fromOld?.formerTitles || []),
+        ...(renamedFrom ? [renamedFrom] : []),
+      ]).filter((f) => f !== title)
+      nextTerms[title] = {
+        title,
+        description: String(item?.description ?? '').trim(),
+        sourcePath,
+        // 改名时保留旧词条的 ignore（「不需要修改」回改后仍应生效）
+        ignoreContexts: normalizeIgnoreContexts(
+          fromPrev?.ignoreContexts ||
+            fromData?.ignoreContexts ||
+            fromOld?.ignoreContexts,
+        ),
+        formerTitles: former,
+        // 改名后 pending 由 rename-sync 重新写入；此处先清空
+        pendingManualConfirm: renamedFrom
+          ? []
+          : normalizePendingManualConfirm(
+              fromPrev?.pendingManualConfirm || fromData?.pendingManualConfirm,
+            ),
+      }
+    }
+
+    res.json(await writeGlossaryFile({ terms: nextTerms }))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** 全库把已确认 term[old] 替换为 term[new] */
+function replaceConfirmedRefs(markdown, oldTitle, newTitle) {
+  const re = new RegExp(`term\\[\\s*${escapeRegExp(oldTitle)}\\s*\\]`, 'g')
+  return markdown.replace(re, `term[${newTitle}]`)
+}
+
+/**
+ * 冲突展示上下文：取命中所在行；过长则保留命中前后各 pad 字并加省略号。
+ * （写入 ignore 仍由前端短上下文处理，不共用此串。）
+ */
+function extractLineContext(text, from, to, { maxLen = 40, pad = 15 } = {}) {
+  const lineStart = text.lastIndexOf('\n', Math.max(0, from - 1)) + 1
+  let lineEnd = text.indexOf('\n', to)
+  if (lineEnd < 0) lineEnd = text.length
+  const line = text.slice(lineStart, lineEnd)
+  if (!line) return text.slice(from, to)
+
+  const hitFrom = from - lineStart
+  const hitTo = to - lineStart
+  if (line.length <= maxLen) return line
+
+  let ctxStart = Math.max(0, hitFrom - pad)
+  let ctxEnd = Math.min(line.length, hitTo + pad)
+  // 尽量凑满 maxLen，便于阅读
+  const need = maxLen - (ctxEnd - ctxStart)
+  if (need > 0) {
+    const extraLeft = Math.min(ctxStart, Math.floor(need / 2))
+    ctxStart -= extraLeft
+    ctxEnd = Math.min(line.length, ctxEnd + (need - extraLeft))
+    ctxStart = Math.max(0, ctxEnd - maxLen)
+  }
+  const prefix = ctxStart > 0 ? '…' : ''
+  const suffix = ctxEnd < line.length ? '…' : ''
+  return `${prefix}${line.slice(ctxStart, ctxEnd)}${suffix}`
+}
+
+/** 命中是否落在某条 ignore 短上下文内（与前端 isIgnoredInText 一致） */
+function isIgnoredInText(text, matchFrom, matchTo, ignoreContexts) {
+  for (const ctx of ignoreContexts || []) {
+    if (!ctx) continue
+    let from = 0
+    while (from <= text.length) {
+      const idx = text.indexOf(ctx, from)
+      if (idx < 0) break
+      const ctxTo = idx + ctx.length
+      if (matchFrom >= idx && matchTo <= ctxTo) return true
+      from = idx + 1
+    }
+  }
+  return false
+}
+
+/**
+ * 改名后：同步已确认引用，并扫描裸新名/曾用名冲突。
+ * body: { oldTitle, newTitle }
+ */
+app.post('/api/glossary/rename-sync', async (req, res) => {
+  try {
+    const oldTitle = String(req.body?.oldTitle || '').trim()
+    const newTitle = String(req.body?.newTitle || '').trim()
+    if (!oldTitle || !newTitle) {
+      return res.status(400).json({ error: 'oldTitle / newTitle 必填' })
+    }
+
+    const alsoReplace = Array.isArray(req.body?.alsoReplace)
+      ? req.body.alsoReplace.map((t) => String(t || '').trim()).filter(Boolean)
+      : []
+    const replaceTitles = Array.from(
+      new Set([oldTitle, ...alsoReplace].filter((t) => t && t !== newTitle)),
+    )
+
+    const tabs = await listTabs()
+    /** @type {Array<{ id: string, sourcePath: string, kind: string, context: string, hit: string, from: number, to: number }>} */
+    const conflicts = []
+    let refUpdatedFiles = 0
+
+    const glossary = await readGlossaryFile()
+    const ignoreContexts = normalizeIgnoreContexts(
+      glossary.terms?.[newTitle]?.ignoreContexts,
+    )
+
+    for (const tab of tabs) {
+      const dir = tabDir(tab)
+      let entries
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.endsWith('.md')) continue
+        const base = entry.name.replace(/\.md$/, '')
+        if (!isSafeName(base)) continue
+        const fp = filePath(tab, entry.name)
+        let content
+        try {
+          content = await fs.readFile(fp, 'utf-8')
+        } catch {
+          continue
+        }
+        const sourcePath = `${tab}/${entry.name}`
+        let next = content
+        if (oldTitle !== newTitle) {
+          let replaced = content
+          for (const t of replaceTitles) {
+            replaced = replaceConfirmedRefs(replaced, t, newTitle)
+          }
+          if (replaced !== content) {
+            next = replaced
+            await fs.writeFile(fp, replaced, 'utf-8')
+            refUpdatedFiles += 1
+          }
+        }
+
+        // 扫描裸冲突：去掉 term[] 与定义块后再找
+        let scanText = next.replace(
+          /:::[\t ]*term[\t ]*\[[^\]]*\][\s\S]*?:::/gi,
+          (block) => ' '.repeat(block.length),
+        )
+        scanText = scanText.replace(/term\[[^\]]+\]/g, (m) => ' '.repeat(m.length))
+
+        const pushHits = (needle, kind) => {
+          if (!needle) return
+          let from = 0
+          while (from <= scanText.length) {
+            const idx = scanText.indexOf(needle, from)
+            if (idx < 0) break
+            const to = idx + needle.length
+            from = idx + 1
+            // 已「不需要修改」的上下文不再进冲突抽屉（含回改后的曾用名命中）
+            if (isIgnoredInText(scanText, idx, to, ignoreContexts)) continue
+            conflicts.push({
+              id: `${sourcePath}:${idx}:${kind}`,
+              sourcePath,
+              kind,
+              hit: needle,
+              context: extractLineContext(scanText, idx, to),
+              from: idx,
+              to,
+            })
+          }
+        }
+
+        if (oldTitle !== newTitle) {
+          // 只扫新名裸文本。曾用名正文若在「新名冲突」时已「不需要修改」，
+          // 再扫曾用名会把同一批内容再次推进抽屉（例如 能量→气 又弹出能量）。
+          pushHits(newTitle, 'new-title')
+        }
+      }
+    }
+
+    console.log(
+      `[glossary/rename-sync] ${oldTitle} → ${newTitle}: refs=${refUpdatedFiles}, conflicts=${conflicts.length}, replace=[${replaceTitles.join(',')}]`,
+    )
+
+    // 扫描结果整表写入 pendingManualConfirm（空数组 = 可自动确认）
+    const latest = await readGlossaryFile()
+    const terms = { ...latest.terms }
+    const prevTerm = terms[newTitle]
+    if (prevTerm) {
+      terms[newTitle] = {
+        ...prevTerm,
+        pendingManualConfirm: normalizePendingManualConfirm(conflicts),
+      }
+    } else {
+      terms[newTitle] = {
+        title: newTitle,
+        description: '',
+        sourcePath: '',
+        ignoreContexts: [],
+        formerTitles: normalizeFormerTitles([oldTitle]),
+        pendingManualConfirm: normalizePendingManualConfirm(conflicts),
+      }
+    }
+    const saved = await writeGlossaryFile({ terms })
+
+    res.json({
+      refUpdatedFiles,
+      conflicts,
+      lastUpdated: saved.lastUpdated,
+      terms: saved.terms,
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * 批量应用冲突处理。
+ * body: {
+ *   newTitle,
+ *   confirms: [{ sourcePath, from, to, title }],
+ *   ignores: [{ sourcePath, from, to, context, termTitle }],
+ *   resolvedIds: string[]  // 从 pendingManualConfirm 中删除
+ * }
+ */
+app.post('/api/glossary/apply-conflicts', async (req, res) => {
+  try {
+    const newTitle = String(req.body?.newTitle || '').trim()
+    const confirms = Array.isArray(req.body?.confirms) ? req.body.confirms : []
+    const ignores = Array.isArray(req.body?.ignores) ? req.body.ignores : []
+    const resolvedIds = new Set(
+      (Array.isArray(req.body?.resolvedIds) ? req.body.resolvedIds : [])
+        .map((id) => String(id || '').trim())
+        .filter(Boolean),
+    )
+
+    // 按文件聚合 confirms：把裸命中换成 term[title]
+    /** @type {Map<string, Array<{ from: number, to: number, title: string }>>} */
+    const byFile = new Map()
+    for (const item of confirms) {
+      const sourcePath = String(item?.sourcePath || '').trim()
+      const title = String(item?.title || newTitle).trim()
+      const from = Number(item?.from)
+      const to = Number(item?.to)
+      if (!sourcePath || !title || !Number.isFinite(from) || !Number.isFinite(to)) continue
+      if (!byFile.has(sourcePath)) byFile.set(sourcePath, [])
+      byFile.get(sourcePath).push({ from, to, title })
+      const id = String(item?.id || '').trim()
+      if (id) resolvedIds.add(id)
+    }
+
+    for (const [sourcePath, ops] of byFile) {
+      const slash = sourcePath.indexOf('/')
+      if (slash <= 0) continue
+      const tab = sourcePath.slice(0, slash)
+      const file = sourcePath.slice(slash + 1)
+      const fp = filePath(tab, file)
+      let content = await fs.readFile(fp, 'utf-8')
+      const sorted = [...ops].sort((a, b) => b.from - a.from)
+      for (const op of sorted) {
+        if (op.from < 0 || op.to > content.length || op.to <= op.from) continue
+        content =
+          content.slice(0, op.from) +
+          `term[${op.title}]` +
+          content.slice(op.to)
+      }
+      await fs.writeFile(fp, content, 'utf-8')
+    }
+
+    const data = await readGlossaryFile()
+    const terms = { ...data.terms }
+
+    // ignores → glossary（词条缺失时补建）
+    for (const item of ignores) {
+      const termTitle = String(item?.termTitle || newTitle).trim()
+      const ctx = String(item?.context || '').trim()
+      if (!termTitle || !ctx) continue
+      const prev = terms[termTitle]
+      const list = normalizeIgnoreContexts(prev?.ignoreContexts)
+      if (!list.includes(ctx)) list.push(ctx)
+      terms[termTitle] = {
+        title: termTitle,
+        description: String(prev?.description ?? '').trim(),
+        sourcePath: String(prev?.sourcePath || item?.sourcePath || '').trim(),
+        ignoreContexts: list,
+        formerTitles: normalizeFormerTitles(prev?.formerTitles),
+        pendingManualConfirm: normalizePendingManualConfirm(
+          prev?.pendingManualConfirm,
+        ),
+      }
+      const id = String(item?.id || '').trim()
+      if (id) resolvedIds.add(id)
+    }
+
+    // 从 pending 中删除已处理项
+    if (newTitle && resolvedIds.size && terms[newTitle]) {
+      const prev = terms[newTitle]
+      terms[newTitle] = {
+        ...prev,
+        pendingManualConfirm: normalizePendingManualConfirm(
+          prev.pendingManualConfirm,
+        ).filter((c) => !resolvedIds.has(c.id)),
+      }
+    }
+
+    res.json(await writeGlossaryFile({ terms }))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 await ensureDocsRoot()
-app.listen(PORT, () => {
+
+// Express 5：端口占用等错误会进回调第一个参数；若忽略会导致假「已启动」后立刻退出
+const server = app.listen(PORT, (err) => {
+  if (err) {
+    console.error(`[api] 启动失败: ${err.message}`)
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `[api] 端口 ${PORT} 已被占用。请先结束旧进程后再运行 npm run dev：\n` +
+          `  Windows: netstat -ano | findstr :${PORT}  →  taskkill /PID <pid> /F`,
+      )
+    }
+    process.exit(1)
+  }
   console.log(`文档 API 已启动: http://localhost:${PORT}`)
   console.log(`文档存储目录: ${DOCS_ROOT}`)
+})
+
+server.on('error', (err) => {
+  console.error(`[api] 服务错误: ${err.message}`)
+  process.exit(1)
 })

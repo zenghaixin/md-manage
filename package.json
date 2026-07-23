@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/free-port.js 3001",
     "dev": "concurrently -k -n api,web -c blue,green \"node server/index.js\" \"vite\"",
     "dev:web": "vite",
     "dev:api": "node server/index.js",
@@ -20,6 +21,8 @@
     "cors": "^2.8.6",
     "element-plus": "^2.14.3",
     "express": "^5.2.1",
+    "pinia": "^4.0.2",
+    "segmentit": "^2.0.3",
     "vue": "^3.5.39",
     "vue-router": "^4.6.4"
   },

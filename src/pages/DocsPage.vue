@@ -1,11 +1,12 @@
 <script setup>
-import { computed, ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import FileSidebar from '../components/FileSidebar.vue'
 import MarkdownEditor from '../components/MarkdownEditor.vue'
 import { api } from '../api'
 import { useToast } from '../composables/useToast'
 import { useMediaQuery } from '../composables/useMediaQuery'
+import { onOpenFileRequest } from '../editor/shellEvents'
 
 const { showToast } = useToast()
 const isMobile = useMediaQuery('(max-width: 767px)')
@@ -183,16 +184,26 @@ function onSelectFile({ tab, file }) {
   if (isMobile.value) sidebarOpen.value = false
 }
 
+let stopOpenFile = null
+
 watch(isMobile, (mobile) => {
   if (!mobile) sidebarOpen.value = false
 })
 
 onMounted(async () => {
+  stopOpenFile = onOpenFileRequest(({ tab, file }) => {
+    onSelectFile({ tab, file })
+  })
   try {
     await refreshTree()
   } catch (err) {
     showToast(err.message || '无法连接文档服务，请先运行 npm run dev', 'error')
   }
+})
+
+onUnmounted(() => {
+  stopOpenFile?.()
+  stopOpenFile = null
 })
 </script>
 

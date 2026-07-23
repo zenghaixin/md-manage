@@ -10,7 +10,12 @@ import { HeadingBackspace } from '../editor/headingBackspace'
 import {
   getAllTiptapExtensions,
   readEditorMarkdown,
+  runFileSaveHooks,
 } from '../editor/extensions'
+import {
+  onReloadFileRequest,
+  onSaveCurrentFileRequest,
+} from '../editor/shellEvents'
 
 const props = defineProps({
   tab: { type: String, default: '' },
@@ -33,6 +38,7 @@ const AUTOSAVE_MS = 3000
 let saveTimer = null
 let loadToken = 0
 let applyingValue = false
+let stopReload = null
 
 const editor = useEditor({
   extensions: [StarterKit, Markdown, HeadingBackspace, ...getAllTiptapExtensions()],
@@ -150,9 +156,10 @@ async function loadFile() {
   }
 }
 
-async function saveFile() {
+async function saveFile(force = false) {
   pullFromEditor()
-  if (!props.tab || !props.file || !dirty.value || saving.value) return
+  if (!props.tab || !props.file || saving.value) return
+  if (!force && !dirty.value) return
 
   saving.value = true
   error.value = ''
@@ -160,8 +167,14 @@ async function saveFile() {
   try {
     await api.saveFile(props.tab, props.file, content.value)
     dirty.value = false
+    await runFileSaveHooks({
+      tab: props.tab,
+      file: props.file,
+      markdown: content.value,
+    })
   } catch (err) {
     error.value = err.message
+    throw err
   } finally {
     saving.value = false
   }
@@ -170,7 +183,9 @@ async function saveFile() {
 function scheduleAutosave() {
   clearInterval(saveTimer)
   saveTimer = setInterval(() => {
-    if (dirty.value) saveFile()
+    if (dirty.value) {
+      saveFile().catch(() => {})
+    }
   }, AUTOSAVE_MS)
 }
 
@@ -182,6 +197,11 @@ watch(
       pullFromEditor()
       try {
         await api.saveFile(prevTab, prevFile, content.value)
+        await runFileSaveHooks({
+          tab: prevTab,
+          file: prevFile,
+          markdown: content.value,
+        })
       } catch {
         // keep going to load next file
       }
@@ -190,16 +210,38 @@ watch(
   },
 )
 
+let stopSaveCurrent = null
+
 onMounted(() => {
   loadFile()
   scheduleAutosave()
+  stopReload = onReloadFileRequest(({ tab, file }) => {
+    if (tab === props.tab && file === props.file) {
+      // 扩展已写盘：以磁盘为准，避免本地 dirty 把外部改写盖回去
+      dirty.value = false
+      loadFile()
+    }
+  })
+  stopSaveCurrent = onSaveCurrentFileRequest(async () => {
+    await saveFile(true)
+  })
 })
 
 onUnmounted(() => {
   clearInterval(saveTimer)
+  stopReload?.()
+  stopReload = null
+  stopSaveCurrent?.()
+  stopSaveCurrent = null
   if (dirty.value && props.tab && props.file) {
     pullFromEditor()
-    api.saveFile(props.tab, props.file, content.value).catch(() => {})
+    const tab = props.tab
+    const file = props.file
+    const markdown = content.value
+    api
+      .saveFile(tab, file, markdown)
+      .then(() => runFileSaveHooks({ tab, file, markdown }))
+      .catch(() => {})
   }
   editor.value?.destroy()
 })

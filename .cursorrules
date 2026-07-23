@@ -1,19 +1,67 @@
 # Role
-你是一名资深的前端开发工程师，精通 Vue 3 (Composition API) 和原生小程序开发。
+你是本仓库（md-manage）的协作开发助手：Vue 3 + TipTap Markdown 文档管理器。
+多人并行开发时，优先保证核心壳稳定，新功能以扩展方式接入。
 
 # Coding Principles
-1. **代码规范：** 优先编写简洁、可读性强、类型安全的代码。
-2. **逻辑处理：** 在处理业务逻辑时，优先考虑边界条件和异常处理。
-3. **小程序适配：** 在进行小程序开发时，严格遵守微信原生开发规范，避免使用 DOM 操作，使用 `wx.xxx` API。
-4. **性能优化：** 避免不必要的计算和重复渲染。在 Vue 中合理使用 `computed` 和 `watch`。
-5. **注释习惯：** 关键算法逻辑和复杂的业务判断需要添加简明扼要的中文注释。
+1. 优先简洁、可读、类型安全。
+2. 优先边界与异常。
+3. 避免无谓计算；Vue 中合理使用 computed / watch。
+4. 关键算法用简明中文注释。
+5. 新功能经扩展钩子与壳事件接入，不硬改 MarkdownEditor / DocsPage / main。
 
 # Constraints
-- 除非我特别要求，否则不要添加无关的 Markdown 解释，直接输出代码。
-- 严禁使用任何 `eval()` 或存在严重安全隐患的写法。
-- 代码风格统一采用驼峰命名法（CamelCase）。
-- 如果我在询问关于某个 Vue 组件的问题，请优先使用 `<script setup>` 语法。
+- 除非特别要求，不写无关 Markdown 解释。
+- 禁止 eval 与高危写法。
+- 驼峰命名；Vue 优先 `<script setup>`。
+- 禁止在 MarkdownEditor / DocsPage 中 import 具体扩展（glossary、term-glossary/*）。
 
-# Output Format
-- 在修改代码时，请以代码块的形式提供完整的函数或修改后的组件代码，而不是零散的片段。
-- 如果涉及文件修改，请指出文件的路径。
+# Built-in Extension: term-glossary（词条）
+
+## 落库语法
+### 定义（有空格）
+```md
+::: term [标题]
+描述
+:::
+```
+
+### 已确认引用（无两侧空格）
+```md
+角色term[HP]归零
+```
+- 编辑区显示高亮标题；`×` 取消确认 → 裸文本，并写入短 ignoreContexts，避免立刻再自动确认
+- 手写无效 `term[不存在]`：红虚线，可 `×` 删除
+
+## 识别（segmentit）
+- 全量 segmentit + glossary 标题作自定义词库（`词|0x1000|999999`）
+- 防抖约 400ms；IME composition 期间不转换
+- **整词命中且在词表** → 自动写成 `term[标题]`
+- **切不出整词但子串像词条** → 灰线，用户点选确认
+- **不再提供**空格/`%%` 等包一层快捷输入
+- 标题经 `sanitizeTermTitle` 清洗；空标题不进词库
+- 定义块不完整（无标题或空描述）且光标不在块内 → 整块标红提示
+
+## glossary.json 字段
+```json
+{
+  "title": "能量",
+  "description": "...",
+  "sourcePath": "...",
+  "ignoreContexts": ["恢复能量"],
+  "formerTitles": ["气"]
+}
+```
+- 改名：旧名进 `formerTitles`，`ignoreContexts` 清空；已确认 `term[旧]` 全库改为 `term[新]`
+- 曾用名仅提示不自动改；新名撞正文 → 右侧冲突抽屉（批量确认 / 自动或选字 ignore）
+- 新增标题撞他人曾用名 → 确认沿用旧词条或新建（新建则从旧词 formerTitles 删除）
+
+## 关键文件
+- `segmenter.ts` / `match.ts` / `convert.ts` / `conflictDrawer.ts`
+- `stores/glossary.ts`、`server/index.js`（rename-sync / apply-conflicts）
+
+## API
+- GET/PUT `/api/glossary`
+- POST `/api/glossary/sync`
+- PATCH `/api/glossary/file`
+- POST `/api/glossary/rename-sync`
+- POST `/api/glossary/apply-conflicts`

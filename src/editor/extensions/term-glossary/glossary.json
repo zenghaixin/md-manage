@@ -1,0 +1,50 @@
+{
+  "lastUpdated": "2026-07-23T09:08:27.111Z",
+  "terms": {
+    "HP": {
+      "title": "HP",
+      "description": "# 123\n角色生命值1122  \nterm[MP]",
+      "sourcePath": "测试/测试.md",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": []
+    },
+    "MP": {
+      "title": "MP",
+      "description": "角色魔力值",
+      "sourcePath": "测试/测试.md",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": []
+    },
+    "AP": {
+      "title": "AP",
+      "description": "角色攻击力  \nterm[HP]",
+      "sourcePath": "测试/测试.md",
+      "ignoreContexts": [
+        "AP1测",
+        "里在AP1测"
+      ],
+      "formerTitles": [],
+      "pendingManualConfirm": []
+    },
+    "气": {
+      "title": "气",
+      "description": "气功",
+      "sourcePath": "测试/测试.md",
+      "ignoreContexts": [],
+      "formerTitles": [
+        "能量"
+      ],
+      "pendingManualConfirm": []
+    },
+    "魔气": {
+      "title": "魔气",
+      "description": "魔族的term[气]",
+      "sourcePath": "测试/测试.md",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": []
+    }
+  }
+}

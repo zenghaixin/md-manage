@@ -75,13 +75,9 @@ export const TermGlossaryNode = Node.create({
 
   addNodeView() {
     return VueNodeViewRenderer(TermNodeView, {
-      // 标题 / 关联标签内的事件交给浏览器，避免 PM 抢焦点
       stopEvent: ({ event }) => {
         const t = event.target as HTMLElement | null
-        return !!(
-          t?.closest?.('.ext-term-title') ||
-          t?.closest?.('.ext-term-related')
-        )
+        return !!t?.closest?.('.ext-term-title')
       },
       ignoreMutation: ({ mutation }) => {
         const t = mutation.target as Node | null
@@ -89,10 +85,7 @@ export const TermGlossaryNode = Node.create({
           t && t.nodeType === Node.TEXT_NODE
             ? t.parentElement
             : (t as HTMLElement | null)
-        return !!(
-          el?.closest?.('.ext-term-title') ||
-          el?.closest?.('.ext-term-related')
-        )
+        return !!el?.closest?.('.ext-term-title')
       },
     })
   },
@@ -123,7 +116,6 @@ export const TermGlossaryNode = Node.create({
       .renderChildren(node.content || [], '\n')
       .replace(/^(?:&nbsp;|\u00a0|\s)+|(?:&nbsp;|\u00a0|\s)+$/g, '')
       .replace(/\n+$/g, '')
-    // 空描述不插空行；块尾不加 \n\n，避免落盘/刷新后在下方不断补空段
     if (!body) return `::: term [${title}]\n:::`
     return `::: term [${title}]\n${body}\n:::`
   },
@@ -151,7 +143,6 @@ export const TermGlossaryNode = Node.create({
           tokens: [],
         }
       }
-      // 保留原文换行，交给 marked 块级解析（### / 列表 / 加粗等）
       const forBlocks = body.replace(/\r\n/g, '\n')
 
       return {
@@ -166,12 +157,9 @@ export const TermGlossaryNode = Node.create({
 
   addCommands() {
     return {
-      /**
-       * 在光标处插入空词条，并聚焦到描述开头。
-       */
       insertTermGlossary:
         () =>
-        ({ editor, chain }) => {
+        ({ chain }) => {
           return chain()
             .focus()
             .insertContent({

@@ -4,6 +4,9 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
+  optimizeDeps: {
+    include: ['segmentit'],
+  },
   server: {
     host: true,
     port: 5173,
@@ -15,7 +18,7 @@ export default defineConfig({
     },
     // 文档目录会被 API 自动保存写入，勿监听以免整页刷新
     watch: {
-      ignored: ['**/md/**'],
+      ignored: ['**/md/**', '**/glossary.json'],
     },
   },
 })
