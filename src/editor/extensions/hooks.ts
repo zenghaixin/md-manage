@@ -26,6 +26,14 @@ export async function runAppStartHooks(): Promise<void> {
 
 /** 文件落盘成功后：通知各扩展 */
 export async function runFileSaveHooks(ctx: FileContext): Promise<void> {
-  if (!ctx?.tab || !ctx?.file) return
-  await runHook('onFileSave', (ext) => ext.onFileSave?.(ctx))
+  const path = String(ctx?.path || '').trim()
+  if (!path) return
+  const slash = path.indexOf('/')
+  const normalized: FileContext = {
+    path,
+    markdown: ctx.markdown,
+    tab: slash > 0 ? path.slice(0, slash) : '',
+    file: slash > 0 ? path.slice(slash + 1) : path,
+  }
+  await runHook('onFileSave', (ext) => ext.onFileSave?.(normalized))
 }

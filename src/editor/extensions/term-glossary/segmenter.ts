@@ -99,50 +99,48 @@ export function segmentText(text: string): SegmentSpan[] {
 
 /**
  * 在分词结果上找词表整词命中（长词优先、不重叠）。
- * 也尝试连续若干 segment 拼接等于某标题（应对偶发过切）。
+ * 用「分词边界 + 最长标题优先」扫描，避免「暴击率」被先切成「暴击」而丢掉「率」。
  */
 export function findDictionaryHitsInText(
   text: string,
   titles: string[],
 ): Array<{ from: number; to: number; title: string }> {
   if (!text || !titles.length) return []
-  const titleSet = new Set(titles)
-  const sorted = [...titles].sort((a, b) => b.length - a.length)
+  const sorted = [
+    ...new Set(titles.map(sanitizeTermTitle).filter(Boolean)),
+  ].sort((a, b) => b.length - a.length || a.localeCompare(b, 'zh'))
+
   const spans = segmentText(text)
-  if (!spans.length) return []
+  const boundaries = new Set<number>([0, text.length])
+  for (const span of spans) {
+    boundaries.add(span.from)
+    boundaries.add(span.to)
+  }
 
   const taken: Array<{ from: number; to: number }> = []
   const hits: Array<{ from: number; to: number; title: string }> = []
   const overlaps = (from: number, to: number) =>
     taken.some((r) => from < r.to && to > r.from)
 
-  // 1) 单段整词
-  for (const span of spans) {
-    if (!titleSet.has(span.text)) continue
-    if (overlaps(span.from, span.to)) continue
-    taken.push({ from: span.from, to: span.to })
-    hits.push({ from: span.from, to: span.to, title: span.text })
-  }
+  // 无分词结果时退回纯子串最长优先（仍不重叠）
+  const requireBoundary = spans.length > 0
 
-  // 2) 连续片段拼接（最多 4 段），补过切
-  for (let i = 0; i < spans.length; i += 1) {
-    let joined = ''
-    let end = spans[i].from
-    for (let j = i; j < Math.min(spans.length, i + 4); j += 1) {
-      if (j > i && spans[j].from !== end) break
-      joined += spans[j].text
-      end = spans[j].to
-      if (j === i) continue // 单段已在上面处理
-      if (!titleSet.has(joined)) continue
-      const from = spans[i].from
-      const to = end
-      if (overlaps(from, to)) continue
-      taken.push({ from, to })
-      hits.push({ from, to, title: joined })
+  for (const title of sorted) {
+    let from = 0
+    while (from <= text.length) {
+      const idx = text.indexOf(title, from)
+      if (idx < 0) break
+      const to = idx + title.length
+      from = idx + 1
+      if (requireBoundary && (!boundaries.has(idx) || !boundaries.has(to))) {
+        continue
+      }
+      if (overlaps(idx, to)) continue
+      taken.push({ from: idx, to })
+      hits.push({ from: idx, to, title })
     }
   }
 
-  // 按标题表顺序校正：若同一区间被更长标题覆盖，上面已用 taken 约束
   return hits.sort((a, b) => a.from - b.from)
 }
 

@@ -138,9 +138,12 @@ const termGlossaryExtension: MarkdownExtension = {
   },
 
   /** 存盘后：按当前文件同步词条到全局表 */
-  async onFileSave({ tab, file, markdown }) {
+  async onFileSave({ path, tab, file, markdown }) {
     const { useGlossaryStore } = await import('../../../stores/glossary')
-    await useGlossaryStore().syncFile(tab, file, markdown)
+    const sourcePath =
+      String(path || '').trim() ||
+      (tab && file ? `${tab}/${file}` : String(file || tab || '').trim())
+    await useGlossaryStore().syncFileByPath(sourcePath, markdown)
   },
 }
 

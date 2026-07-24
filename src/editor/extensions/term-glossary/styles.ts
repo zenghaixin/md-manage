@@ -195,14 +195,14 @@ html.dark .ext-term-node.is-flash,
 /* 已确认引用：蓝色 + []，右上角可取消 */
 .ext-term-ref {
   position: relative;
-  /* inline-flex 比 inline+绝对定位按钮更稳定，避免光标掉进节点内 */
-  display: inline-flex;
-  align-items: baseline;
+  /* inline-block：便于浏览器在 atom 边界区分光标，减轻输入法整颗替换 */
+  display: inline-block;
   color: #2563eb;
   cursor: pointer;
   text-decoration: none;
   padding-right: 0.55em;
   user-select: none;
+  vertical-align: baseline;
 }
 
 .ext-term-ref::before {
@@ -251,85 +251,169 @@ html.dark .ext-term-node.is-flash,
   color: #fff;
 }
 
-/* 无效 term[标题] */
-.ext-term-ref-invalid,
-.ext-term-ref.ext-term-ref-invalid {
-  color: #dc2626;
-  border-bottom: 1.5px dashed #dc2626;
+/*
+ * 统一虚线：.ext-term-dash + .ext-term-dash--{kind}
+ * 新增颜色：加 kind 常量 + 一组 CSS 变量即可。
+ */
+.ext-term-dash {
+  color: inherit;
+  cursor: pointer;
+  border-bottom: 1.5px dashed var(--term-dash, #94a3b8);
   text-decoration: none;
 }
 
-.ext-term-ref-invalid::before,
-.ext-term-ref-invalid::after {
+.ext-term-dash:hover {
+  border-bottom-color: var(--term-dash-hover, var(--term-dash));
+  background: color-mix(in srgb, var(--term-dash) 14%, transparent);
+}
+
+.ext-term-dash--candidate {
+  --term-dash: #94a3b8;
+  --term-dash-hover: #64748b;
+}
+
+.ext-term-dash--former {
+  --term-dash: #d97706;
+  --term-dash-hover: #b45309;
+}
+
+html.dark .ext-term-dash--former,
+[data-theme='dark'] .ext-term-dash--former {
+  --term-dash: #f59e0b;
+  --term-dash-hover: #fbbf24;
+}
+
+.ext-term-dash--invalid {
+  --term-dash: #dc2626;
+  --term-dash-hover: #b91c1c;
   color: #dc2626;
 }
 
-.ext-term-ref-invalid .ext-term-ref-close {
+.ext-term-ref.ext-term-dash--invalid::before,
+.ext-term-ref.ext-term-dash--invalid::after {
+  color: #dc2626;
+}
+
+.ext-term-ref.ext-term-dash--invalid .ext-term-ref-close {
   background: color-mix(in srgb, #dc2626 18%, transparent);
   color: #dc2626;
 }
 
-.ext-term-ref-invalid .ext-term-ref-close:hover {
+.ext-term-ref.ext-term-dash--invalid .ext-term-ref-close:hover {
   background: #dc2626;
   color: #fff;
 }
 
-/* 未确认候选：灰虚线 */
-.ext-term-ref-candidate {
-  color: inherit;
-  cursor: pointer;
-  border-bottom: 1.5px dashed #94a3b8;
-  text-decoration: none;
+.ext-term-picker-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--border, #c5d0d8) 80%, transparent);
 }
 
-.ext-term-ref-candidate:hover {
-  border-bottom-color: #64748b;
-  background: color-mix(in srgb, #94a3b8 14%, transparent);
+.ext-term-picker-action {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border, #c5d0d8);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.ext-term-picker-action:hover {
+  background: color-mix(in srgb, var(--ink, #1a2830) 6%, transparent);
 }
 
 .ext-term-picker {
   position: fixed;
   z-index: 10020;
-  min-width: 120px;
-  max-width: 240px;
-  padding: 0.4rem;
+  min-width: 140px;
+  max-width: 280px;
+  padding: 0.35rem 0.4rem;
   border: 1px solid var(--border, #c5d0d8);
   border-radius: 8px;
   background: var(--surface, #f4f7f9);
   color: var(--ink, #1a2830);
   box-shadow: 0 10px 28px rgba(26, 40, 48, 0.16);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
 }
 
 .ext-term-picker-label {
-  padding: 0.15rem 0.35rem 0.35rem;
+  padding: 0.1rem 0.25rem 0.3rem;
   color: var(--muted, #5a6b75);
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
 }
 
 .ext-term-picker-list {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.1rem;
 }
 
 .ext-term-picker-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   width: 100%;
   margin: 0;
-  padding: 0.35rem 0.5rem;
+  padding: 0.25rem 0.35rem;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
   font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.ext-term-picker-item.is-muted {
+  color: var(--muted, #5a6b75);
 }
 
 .ext-term-picker-item:hover {
   background: color-mix(in srgb, #2563eb 12%, transparent);
   color: #2563eb;
+}
+
+.ext-term-picker-hotkey {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-right: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.ext-term-picker-foot {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.15rem;
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid color-mix(in srgb, var(--border, #c5d0d8) 80%, transparent);
+}
+
+.ext-term-picker-foot .ext-term-picker-item {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0.15rem 0.3rem;
+  white-space: nowrap;
+  font-size: 0.6875rem;
 }
 
 .ext-term-not-term {
@@ -494,15 +578,9 @@ html.dark .ext-term-node.is-flash,
   font-weight: 700;
 }
 
-.ext-term-popover-desc .ext-term-ref-candidate {
+.ext-term-popover-desc .ext-term-dash--candidate {
   color: inherit;
   cursor: pointer;
-  border-bottom: 1.5px dashed #94a3b8;
-}
-
-.ext-term-popover-desc .ext-term-ref-candidate:hover {
-  border-bottom-color: #64748b;
-  background: color-mix(in srgb, #94a3b8 14%, transparent);
 }
 
 .ext-term-popover .ext-term-ref {
@@ -753,17 +831,19 @@ html.dark .ext-term-ref-close:hover,
   color: #0f172a;
 }
 
-html.dark .ext-term-ref-invalid,
-html.dark .ext-term-ref.ext-term-ref-invalid,
-[data-theme='dark'] .ext-term-ref-invalid,
-[data-theme='dark'] .ext-term-ref.ext-term-ref-invalid {
+html.dark .ext-term-dash--invalid,
+html.dark .ext-term-ref.ext-term-dash--invalid,
+[data-theme='dark'] .ext-term-dash--invalid,
+[data-theme='dark'] .ext-term-ref.ext-term-dash--invalid {
+  --term-dash: #f87171;
+  --term-dash-hover: #fca5a5;
   color: #f87171;
-  border-bottom-color: #f87171;
 }
 
-html.dark .ext-term-ref-candidate,
-[data-theme='dark'] .ext-term-ref-candidate {
-  border-bottom-color: #64748b;
+html.dark .ext-term-dash--candidate,
+[data-theme='dark'] .ext-term-dash--candidate {
+  --term-dash: #64748b;
+  --term-dash-hover: #94a3b8;
 }
 
 html.dark .ext-term-picker,

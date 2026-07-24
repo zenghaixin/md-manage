@@ -14,6 +14,8 @@ export const icons = {
   source: 'lucide:code-xml',
   folder: 'lucide:folder',
   folderOpen: 'lucide:folder-open',
+  folderPlus: 'line-md:folder-plus',
+  filePlus: 'line-md:file-plus',
   file: 'lucide:file-text',
   chevronRight: 'lucide:chevron-right',
   close: 'lucide:x',

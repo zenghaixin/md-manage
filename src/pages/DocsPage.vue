@@ -7,16 +7,25 @@ import { api } from '../api'
 import { useToast } from '../composables/useToast'
 import { useMediaQuery } from '../composables/useMediaQuery'
 import { onOpenFileRequest } from '../editor/shellEvents'
+import { useGlossaryStore } from '../stores/glossary'
 
 const { showToast } = useToast()
 const isMobile = useMediaQuery('(max-width: 767px)')
 
-/** @type {import('vue').Ref<{ name: string, files: string[] }[]>} */
-const folders = ref([])
-const activeTab = ref('')
-const activeFile = ref('')
+/** 路径变更后重扫词库，保证弹窗「跟踪文件」的 sourcePath 与磁盘一致 */
+async function refreshGlossaryPaths() {
+  try {
+    await useGlossaryStore().bootstrap()
+  } catch (err) {
+    console.warn('[docs] refresh glossary failed:', err)
+  }
+}
+
+/** @type {import('vue').Ref<any[]>} */
+const tree = ref([])
+/** 当前文件完整路径，如 `文件夹/子/a.md` */
+const activePath = ref('')
 const busy = ref(false)
-/** 桌面端侧栏折叠；移动端抽屉 */
 const sidebarVisible = ref(true)
 const sidebarOpen = ref(false)
 
@@ -32,27 +41,21 @@ function toggleSidebar() {
   }
 }
 
-async function refreshTree(preferTab, preferFile) {
-  const { tabs } = await api.getTabs()
-  const next = await Promise.all(
-    tabs.map(async (name) => {
-      const { files } = await api.getFiles(name)
-      return { name, files }
-    }),
-  )
-  folders.value = next
+function collectFilePaths(nodes, out = []) {
+  for (const n of nodes || []) {
+    if (n.type === 'file') out.push(n.path)
+    else collectFilePaths(n.children, out)
+  }
+  return out
+}
 
-  const tabNames = next.map((f) => f.name)
-  let tab = preferTab && tabNames.includes(preferTab) ? preferTab : activeTab.value
-  if (!tabNames.includes(tab)) tab = tabNames[0] || ''
-
-  const folder = next.find((f) => f.name === tab)
-  const files = folder?.files || []
-  let file = preferFile && files.includes(preferFile) ? preferFile : activeFile.value
-  if (!files.includes(file)) file = files[0] || ''
-
-  activeTab.value = tab
-  activeFile.value = file
+async function refreshTree(preferPath) {
+  const data = await api.getTree()
+  tree.value = data.tree || []
+  const files = collectFilePaths(tree.value)
+  let next = preferPath && files.includes(preferPath) ? preferPath : activePath.value
+  if (!files.includes(next)) next = files[0] || ''
+  activePath.value = next
 }
 
 async function promptName(title) {
@@ -69,15 +72,14 @@ async function promptName(title) {
   }
 }
 
-async function onAddFolder() {
+async function onAddRootFolder() {
   const trimmed = await promptName('新建文件夹')
   if (!trimmed) return
-
   busy.value = true
   try {
-    await api.createTab(trimmed)
-    await refreshTree(trimmed, '')
-    showToast(`已创建文件夹：md/${trimmed}`, 'success')
+    const data = await api.createFolder('', trimmed)
+    await refreshTree(activePath.value)
+    showToast(`已创建文件夹：md/${data.path}`, 'success')
   } catch (err) {
     showToast(err.message, 'error')
   } finally {
@@ -85,10 +87,25 @@ async function onAddFolder() {
   }
 }
 
-async function onRemoveFolder(tab) {
+async function onAddFolder(parentPath) {
+  const trimmed = await promptName('新建子文件夹')
+  if (!trimmed) return
+  busy.value = true
+  try {
+    const data = await api.createFolder(parentPath, trimmed)
+    await refreshTree(activePath.value)
+    showToast(`已创建文件夹：md/${data.path}`, 'success')
+  } catch (err) {
+    showToast(err.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function onRemoveFolder(pathRel) {
   try {
     await ElMessageBox.confirm(
-      `确定删除文件夹「${tab}」及其下的全部 Markdown 文件？`,
+      `确定删除文件夹「${pathRel}」及其内部全部子文件夹与 Markdown 文件？此操作不可恢复。`,
       '删除文件夹',
       {
         confirmButtonText: '删除',
@@ -102,13 +119,16 @@ async function onRemoveFolder(tab) {
 
   busy.value = true
   try {
-    await api.deleteTab(tab)
-    if (activeTab.value === tab) {
-      activeTab.value = ''
-      activeFile.value = ''
+    await api.deleteFolder(pathRel)
+    if (
+      activePath.value === pathRel ||
+      activePath.value.startsWith(`${pathRel}/`)
+    ) {
+      activePath.value = ''
     }
     await refreshTree()
-    showToast(`已删除：md/${tab}`, 'success')
+    await refreshGlossaryPaths()
+    showToast(`已删除：md/${pathRel}`, 'success')
   } catch (err) {
     showToast(err.message, 'error')
   } finally {
@@ -116,16 +136,34 @@ async function onRemoveFolder(tab) {
   }
 }
 
-async function onAddFile(tab) {
-  if (!tab) return
-  const trimmed = await promptName('新建文件')
-  if (!trimmed) return
-
+async function onRenameFolder({ path: pathRel, name }) {
+  if (!pathRel || !name) return
   busy.value = true
   try {
-    const data = await api.createFile(tab, trimmed)
-    await refreshTree(tab, data.name)
-    showToast(`已创建：md/${tab}/${data.name}`, 'success')
+    const data = await api.renameFolder(pathRel, name)
+    let prefer = activePath.value
+    if (prefer === pathRel || prefer.startsWith(`${pathRel}/`)) {
+      prefer = data.path + prefer.slice(pathRel.length)
+    }
+    await refreshTree(prefer)
+    await refreshGlossaryPaths()
+    showToast(`已重命名文件夹为：${data.name}`, 'success')
+  } catch (err) {
+    showToast(err.message, 'error')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function onAddFile(parentPath) {
+  if (!parentPath) return
+  const trimmed = await promptName('新建文件')
+  if (!trimmed) return
+  busy.value = true
+  try {
+    const data = await api.createFileIn(parentPath, trimmed)
+    await refreshTree(data.path)
+    showToast(`已创建：md/${data.path}`, 'success')
     if (isMobile.value) sidebarOpen.value = false
   } catch (err) {
     showToast(err.message, 'error')
@@ -134,15 +172,14 @@ async function onAddFile(tab) {
   }
 }
 
-async function onRenameFile({ tab, file, name }) {
-  if (!tab || !file || !name) return
-
+async function onRenameFile({ path: pathRel, name }) {
+  if (!pathRel || !name) return
   busy.value = true
   try {
-    const data = await api.renameFile(tab, file, name)
-    const prefer =
-      activeTab.value === tab && activeFile.value === file ? data.name : activeFile.value
-    await refreshTree(tab, prefer)
+    const data = await api.renameFileByPath(pathRel, name)
+    const prefer = activePath.value === pathRel ? data.path : activePath.value
+    await refreshTree(prefer)
+    await refreshGlossaryPaths()
     showToast(`已重命名为：${data.name}`, 'success')
   } catch (err) {
     showToast(err.message, 'error')
@@ -151,10 +188,10 @@ async function onRenameFile({ tab, file, name }) {
   }
 }
 
-async function onRemoveFile({ tab, file }) {
-  if (!tab || !file) return
+async function onRemoveFile(pathRel) {
+  if (!pathRel) return
   try {
-    await ElMessageBox.confirm(`确定删除文件「${file}」？`, '删除文件', {
+    await ElMessageBox.confirm(`确定删除文件「${pathRel}」？`, '删除文件', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
       type: 'warning',
@@ -165,12 +202,11 @@ async function onRemoveFile({ tab, file }) {
 
   busy.value = true
   try {
-    await api.deleteFile(tab, file)
-    if (activeTab.value === tab && activeFile.value === file) {
-      activeFile.value = ''
-    }
-    await refreshTree(tab)
-    showToast(`已删除：${file}`, 'success')
+    await api.deleteFileByPath(pathRel)
+    if (activePath.value === pathRel) activePath.value = ''
+    await refreshTree()
+    await refreshGlossaryPaths()
+    showToast(`已删除：${pathRel}`, 'success')
   } catch (err) {
     showToast(err.message, 'error')
   } finally {
@@ -178,9 +214,27 @@ async function onRemoveFile({ tab, file }) {
   }
 }
 
-function onSelectFile({ tab, file }) {
-  activeTab.value = tab
-  activeFile.value = file
+async function onMove({ fromPath, toParentPath, toIndex }) {
+  if (!fromPath) return
+  busy.value = true
+  try {
+    const data = await api.moveTreeEntry(fromPath, toParentPath, toIndex)
+    let prefer = activePath.value
+    if (prefer === fromPath || prefer.startsWith(`${fromPath}/`)) {
+      prefer = data.path + prefer.slice(fromPath.length)
+    }
+    await refreshTree(prefer)
+    await refreshGlossaryPaths()
+  } catch (err) {
+    showToast(err.message, 'error')
+    await refreshTree(activePath.value)
+  } finally {
+    busy.value = false
+  }
+}
+
+function onSelectFile({ path }) {
+  activePath.value = path
   if (isMobile.value) sidebarOpen.value = false
 }
 
@@ -191,8 +245,8 @@ watch(isMobile, (mobile) => {
 })
 
 onMounted(async () => {
-  stopOpenFile = onOpenFileRequest(({ tab, file }) => {
-    onSelectFile({ tab, file })
+  stopOpenFile = onOpenFileRequest(({ path }) => {
+    onSelectFile({ path })
   })
   try {
     await refreshTree()
@@ -212,20 +266,21 @@ onUnmounted(() => {
     <div class="flex min-h-0 flex-1">
       <FileSidebar
         v-if="!isMobile && sidebarVisible"
-        :folders="folders"
-        :active-tab="activeTab"
-        :active-file="activeFile"
+        :tree="tree"
+        :active-path="activePath"
         @select="onSelectFile"
+        @add-root-folder="onAddRootFolder"
         @add-folder="onAddFolder"
         @remove-folder="onRemoveFolder"
+        @rename-folder="onRenameFolder"
         @add-file="onAddFile"
         @remove-file="onRemoveFile"
         @rename-file="onRenameFile"
+        @move="onMove"
       />
 
       <MarkdownEditor
-        :tab="activeTab"
-        :file="activeFile"
+        :path="activePath"
         :sidebar-open="sidebarShown"
         @toggle-sidebar="toggleSidebar"
       />
@@ -240,15 +295,17 @@ onUnmounted(() => {
       append-to-body
     >
       <FileSidebar
-        :folders="folders"
-        :active-tab="activeTab"
-        :active-file="activeFile"
+        :tree="tree"
+        :active-path="activePath"
         @select="onSelectFile"
+        @add-root-folder="onAddRootFolder"
         @add-folder="onAddFolder"
         @remove-folder="onRemoveFolder"
+        @rename-folder="onRenameFolder"
         @add-file="onAddFile"
         @remove-file="onRemoveFile"
         @rename-file="onRenameFile"
+        @move="onMove"
       />
     </el-drawer>
   </div>

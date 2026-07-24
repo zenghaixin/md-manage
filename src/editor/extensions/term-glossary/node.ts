@@ -159,8 +159,8 @@ export const TermGlossaryNode = Node.create({
     return {
       insertTermGlossary:
         () =>
-        ({ chain }) => {
-          return chain()
+        ({ editor, chain }) => {
+          const ok = chain()
             .focus()
             .insertContent({
               type: this.name,
@@ -168,6 +168,29 @@ export const TermGlossaryNode = Node.create({
               content: [{ type: 'paragraph' }],
             })
             .run()
+          if (!ok) return false
+
+          // 插入后选区在描述段，下一帧把焦点挪到标题输入框
+          const nodeName = this.name
+          requestAnimationFrame(() => {
+            try {
+              if (editor.isDestroyed) return
+              const { $from } = editor.state.selection
+              const depth = findTermDepth($from, nodeName)
+              if (depth < 0) return
+              const termPos = $from.before(depth)
+              const dom = editor.view.nodeDOM(termPos) as HTMLElement | null
+              const input = dom?.querySelector?.(
+                '.ext-term-title',
+              ) as HTMLInputElement | null
+              if (!input) return
+              input.focus()
+              input.select()
+            } catch {
+              // ignore
+            }
+          })
+          return true
         },
     }
   },

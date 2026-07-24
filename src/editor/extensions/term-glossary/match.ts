@@ -9,6 +9,7 @@ import {
   findSubstringFallbackHits,
   syncSegmenterTitles,
 } from './segmenter'
+import { getHostTermTitle } from './editorViewRef'
 import {
   hasPendingManualConfirm,
   normalizeIgnoreContexts,
@@ -84,7 +85,9 @@ export function collectGlossary(doc?: ProseMirrorNode | null): Map<string, strin
 
 export function syncGlossaryToSegmenter(doc?: ProseMirrorNode | null): string[] {
   const titles = Array.from(collectGlossary(doc).keys())
-  syncSegmenterTitles(titles)
+  // 曾用名一并进分词词典，便于「暴击率」整词切分、最长优先命中
+  const formers = Array.from(collectFormerTitleMap().keys())
+  syncSegmenterTitles([...titles, ...formers])
   return titles
 }
 
@@ -102,9 +105,9 @@ export function collectIgnoreMap(): Map<string, string[]> {
   return map
 }
 
-export function collectFormerTitleMap(): Map<string, string> {
-  /** formerTitle → currentTitle */
-  const map = new Map<string, string>()
+export function collectFormerTitleMap(): Map<string, string[]> {
+  /** formerTitle → 当前标题列表（多词条可共享同一曾用名） */
+  const map = new Map<string, string[]>()
   try {
     const store = useGlossaryStore()
     for (const [title, term] of Object.entries(store.terms)) {
@@ -114,7 +117,9 @@ export function collectFormerTitleMap(): Map<string, string> {
         if (!f || f === current) continue
         // 若曾用名已是现有词条标题，不作为曾用名提示
         if (store.terms[f]) continue
-        if (!map.has(f)) map.set(f, current)
+        const list = map.get(f) || []
+        if (!list.includes(current)) list.push(current)
+        map.set(f, list)
       }
     }
   } catch {
@@ -313,7 +318,389 @@ function shouldSkipAutoConfirm(
   title: string,
 ): boolean {
   if (isAutoConfirmSuppressed(title)) return true
-  return isDemotedInText(text, matchFrom, matchTo, title)
+  if (isDemotedInText(text, matchFrom, matchTo, title)) return true
+  // 还有更长标题/曾用名以本词为前缀时，先不自动确认（等用户输完或弹窗选）
+  if (isPrefixOfLongerGlossaryKey(title)) return true
+  return false
+}
+
+/** 是否存在更长的正式标题或曾用名以 shortTitle 为前缀（如 暴击 → 暴击率） */
+export function isPrefixOfLongerGlossaryKey(shortTitle: string): boolean {
+  const key = sanitizeTermTitle(shortTitle)
+  if (!key) return false
+  try {
+    const store = useGlossaryStore()
+    for (const title of Object.keys(store.terms)) {
+      const t = sanitizeTermTitle(title)
+      if (t && t.length > key.length && t.startsWith(key)) return true
+    }
+    for (const term of Object.values(store.terms)) {
+      for (const former of term.formerTitles || []) {
+        const f = sanitizeTermTitle(former)
+        if (f && f.length > key.length && f.startsWith(key)) return true
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return false
+}
+
+/**
+ * 光标前文本块内、到光标为止的纯文本。
+ */
+function textBeforeCursorInBlock(
+  doc: ProseMirrorNode,
+  cursor: number,
+): { text: string; blockStart: number } | null {
+  try {
+    const $pos = doc.resolve(cursor)
+    if (!$pos.parent.isTextblock) return null
+    const blockStart = cursor - $pos.parentOffset
+    const text = doc.textBetween(blockStart, cursor, '', '')
+    return { text, blockStart }
+  } catch {
+    return null
+  }
+}
+
+interface GlossaryMatchKey {
+  text: string
+  kind: 'former' | 'title'
+  currentTitles: string[]
+}
+
+function collectGlossaryMatchKeys(): GlossaryMatchKey[] {
+  const host = getHostTermTitle()
+  const keys: GlossaryMatchKey[] = []
+  const formerMap = collectFormerTitleMap()
+  for (const [former, currents] of formerMap) {
+    if (!former || !currents.length) continue
+    // 弹窗描述内：曾用名若等于当前词条标题，不提示
+    if (host && former === host) continue
+    keys.push({ text: former, kind: 'former', currentTitles: [...currents] })
+  }
+  for (const title of collectStoreTitles()) {
+    if (!title) continue
+    // 已是曾用名的不再当正式标题键重复
+    if (formerMap.has(title)) continue
+    // 弹窗描述内：不把自身标题当确认候选
+    if (host && title === host) continue
+    keys.push({ text: title, kind: 'title', currentTitles: [title] })
+  }
+  return keys
+}
+
+function longestExactSuffix(
+  text: string,
+  keys: GlossaryMatchKey[],
+): GlossaryMatchKey | null {
+  let best: GlossaryMatchKey | null = null
+  for (const k of keys) {
+    if (!k.text || !text.endsWith(k.text)) continue
+    if (!best || k.text.length > best.text.length) best = k
+  }
+  return best
+}
+
+/** 当前串仍是某个词条/曾用名的前缀（还可继续输入更长匹配） */
+function isPrefixOfAnyMatchKey(text: string, keys: GlossaryMatchKey[]): boolean {
+  if (!text) return false
+  return keys.some((k) => k.text.startsWith(text))
+}
+
+function hitFromKey(
+  blockStart: number,
+  matchEnd: number,
+  key: GlossaryMatchKey,
+  titles: string[],
+):
+  | { kind: 'former'; hit: FormerHitMatch }
+  | { kind: 'candidate'; hit: CandidateMatch }
+  | null {
+  const matchStart = matchEnd - key.text.length
+  if (matchStart < blockStart || matchEnd <= matchStart) return null
+  if (key.kind === 'former') {
+    return {
+      kind: 'former',
+      hit: {
+        from: matchStart,
+        to: matchEnd,
+        formerTitle: key.text,
+        currentTitles: [...key.currentTitles],
+      },
+    }
+  }
+  const host = getHostTermTitle()
+  const candidates = relatedTitlesForMatch(key.text, titles).filter(
+    (t) => t !== host,
+  )
+  return {
+    kind: 'candidate',
+    hit: {
+      from: matchStart,
+      to: matchEnd,
+      matchTitle: key.text,
+      candidates: candidates.length ? candidates : [key.text],
+      kind: 'fallback',
+    },
+  }
+}
+
+/**
+ * 词条描述内出现自身标题：不弹确认（正文 term 节点 / 弹窗描述编辑器）。
+ */
+function isOwnTitleInOwnDescription(
+  doc: ProseMirrorNode,
+  from: number,
+  to: number,
+  matchTitle: string,
+): boolean {
+  const host = getHostTermTitle()
+  if (host && host === matchTitle) return true
+  const self = enclosingTerm(from, to, collectTermRanges(doc))
+  return !!self && self.title === matchTitle
+}
+
+/**
+ * 统一确认决策（同一功能的不同分支）：
+ * 1. 曾用名 → 弹窗
+ * 2. 完全等于现有标题且不可再延长 → 静默 term[]（本函数返回 null，交给 auto-confirm / 分词）
+ * 3. 还可延长 / 相关候选 → 延迟弹窗；已最长但被抑制自动确认 → 立刻弹窗
+ * 4. 自身描述同名 → 不处理
+ */
+
+function canKeyExtend(exact: GlossaryMatchKey, keys: GlossaryMatchKey[]): boolean {
+  return keys.some(
+    (k) => k.text.length > exact.text.length && k.text.startsWith(exact.text),
+  )
+}
+
+function isFormerIgnored(
+  text: string,
+  fromInText: number,
+  toInText: number,
+  currentTitles: string[],
+): boolean {
+  const ignoreMap = collectIgnoreMap()
+  return currentTitles.some((t) =>
+    isIgnoredInText(text, fromInText, toInText, ignoreMap.get(t) || []),
+  )
+}
+
+function finalizePromptResult(
+  doc: ProseMirrorNode,
+  result:
+    | { kind: 'former'; hit: FormerHitMatch }
+    | { kind: 'candidate'; hit: CandidateMatch },
+  mode: 'immediate' | 'delayed',
+):
+  | { kind: 'former'; hit: FormerHitMatch }
+  | { kind: 'candidate'; hit: CandidateMatch }
+  | null {
+  if (result.kind === 'former') {
+    return result
+  }
+  if (
+    isOwnTitleInOwnDescription(
+      doc,
+      result.hit.from,
+      result.hit.to,
+      result.hit.matchTitle,
+    )
+  ) {
+    return null
+  }
+  // 立刻：仅抑制自动确认时弹窗；否则静默（分词整词由 auto-confirm 处理，子串走灰线）
+  if (mode === 'immediate') {
+    if (!isAutoConfirmSuppressed(result.hit.matchTitle)) return null
+    return result
+  }
+  // 延迟（还可延长）：列出相关词条供确认
+  return result
+}
+
+/**
+ * 边输入边校验：刚输入的新字使「最长匹配」无法再延续时立刻处理上一命中。
+ * 曾用名 → 弹窗；正式标题 → 交静默确认（抑制时才弹）。
+ */
+export function findConfirmHitOnMatchBreak(
+  doc: ProseMirrorNode,
+  cursor: number,
+):
+  | { kind: 'former'; hit: FormerHitMatch }
+  | { kind: 'candidate'; hit: CandidateMatch }
+  | null {
+  const ctx = textBeforeCursorInBlock(doc, cursor)
+  if (!ctx || ctx.text.length < 2) return null
+
+  const keys = collectGlossaryMatchKeys()
+  if (!keys.length) return null
+
+  const prev = ctx.text.slice(0, -1)
+  const exactPrev = longestExactSuffix(prev, keys)
+  if (!exactPrev) return null
+
+  // 新串仍可能是更长词条的前缀 → 继续等
+  if (isPrefixOfAnyMatchKey(ctx.text, keys)) return null
+
+  const matchEnd = cursor - 1
+  const result = hitFromKey(
+    ctx.blockStart,
+    matchEnd,
+    exactPrev,
+    Array.from(collectStoreTitles()),
+  )
+  if (!result) return null
+
+  if (result.kind === 'former') {
+    if (
+      isFormerIgnored(
+        ctx.text.slice(0, -1),
+        result.hit.from - ctx.blockStart,
+        result.hit.to - ctx.blockStart,
+        result.hit.currentTitles,
+      )
+    ) {
+      return null
+    }
+    return result
+  }
+
+  return finalizePromptResult(doc, result, 'immediate')
+}
+
+/**
+ * 立刻：最长完整匹配且无法再延长。
+ * 曾用名 → 弹窗；正式标题可静默则不弹。
+ */
+export function findConfirmHitOnMaximalMatch(
+  doc: ProseMirrorNode,
+  cursor: number,
+):
+  | { kind: 'former'; hit: FormerHitMatch }
+  | { kind: 'candidate'; hit: CandidateMatch }
+  | null {
+  const ctx = textBeforeCursorInBlock(doc, cursor)
+  if (!ctx || !ctx.text) return null
+
+  const keys = collectGlossaryMatchKeys()
+  if (!keys.length) return null
+
+  const exact = longestExactSuffix(ctx.text, keys)
+  if (!exact) return null
+
+  // 还能拼成更长键（如 暴击 → 暴击率）→ 走延迟
+  if (canKeyExtend(exact, keys)) return null
+
+  const result = hitFromKey(
+    ctx.blockStart,
+    cursor,
+    exact,
+    Array.from(collectStoreTitles()),
+  )
+  if (!result) return null
+
+  if (result.kind === 'former') {
+    if (
+      isFormerIgnored(
+        ctx.text,
+        result.hit.from - ctx.blockStart,
+        result.hit.to - ctx.blockStart,
+        result.hit.currentTitles,
+      )
+    ) {
+      return null
+    }
+    return result
+  }
+
+  return finalizePromptResult(doc, result, 'immediate')
+}
+
+/**
+ * 延迟：已完整命中但仍可延长（暴击 → 暴击率 / 暴击概率）时，停顿后弹相关确认。
+ */
+export function findConfirmHitOnExtendableIdle(
+  doc: ProseMirrorNode,
+  cursor: number,
+):
+  | { kind: 'former'; hit: FormerHitMatch }
+  | { kind: 'candidate'; hit: CandidateMatch }
+  | null {
+  const ctx = textBeforeCursorInBlock(doc, cursor)
+  if (!ctx || !ctx.text) return null
+
+  const keys = collectGlossaryMatchKeys()
+  if (!keys.length) return null
+
+  const exact = longestExactSuffix(ctx.text, keys)
+  if (!exact) return null
+  if (!canKeyExtend(exact, keys)) return null
+
+  const result = hitFromKey(
+    ctx.blockStart,
+    cursor,
+    exact,
+    Array.from(collectStoreTitles()),
+  )
+  if (!result) return null
+
+  if (result.kind === 'former') {
+    if (
+      isFormerIgnored(
+        ctx.text,
+        result.hit.from - ctx.blockStart,
+        result.hit.to - ctx.blockStart,
+        result.hit.currentTitles,
+      )
+    ) {
+      return null
+    }
+    return result
+  }
+
+  return finalizePromptResult(doc, result, 'delayed')
+}
+
+/**
+ * 停手补扫：先立刻最长，再可延长延迟命中。
+ */
+export function findConfirmHitAtIdle(
+  doc: ProseMirrorNode,
+  cursor: number,
+):
+  | { kind: 'former'; hit: FormerHitMatch }
+  | { kind: 'candidate'; hit: CandidateMatch }
+  | null {
+  return (
+    findConfirmHitOnMaximalMatch(doc, cursor) ||
+    findConfirmHitOnExtendableIdle(doc, cursor)
+  )
+}
+
+/**
+ * @deprecated 保留给点击装饰等路径
+ */
+export function findQuickConfirmNearCursor(
+  doc: ProseMirrorNode,
+  cursor: number,
+):
+  | { kind: 'former'; hit: FormerHitMatch }
+  | { kind: 'candidate'; hit: CandidateMatch }
+  | null {
+  return (
+    findConfirmHitOnMatchBreak(doc, cursor) ||
+    findConfirmHitAtIdle(doc, cursor)
+  )
+}
+
+export interface FormerHitMatch {
+  from: number
+  to: number
+  formerTitle: string
+  /** 可能对应的当前词条标题（可多个） */
+  currentTitles: string[]
 }
 
 export interface TextScanResult {
@@ -322,16 +709,12 @@ export interface TextScanResult {
   /** 灰线兜底，需用户确认 */
   fallback: CandidateMatch[]
   /** 命中曾用名，仅提示 */
-  formerHits: Array<{
-    from: number
-    to: number
-    formerTitle: string
-    currentTitle: string
-  }>
+  formerHits: FormerHitMatch[]
 }
 
 /**
- * 扫描文档：整词自动确认 + 子串灰线兜底 + 曾用名提示。
+ * 扫描文档：曾用名提示 → 整词自动确认 → 子串灰线兜底。
+ * 曾用名优先占位，避免「暴击率」被正式词「暴击」抢先包成 term[]。
  */
 export function scanTermMatches(doc: ProseMirrorNode): TextScanResult {
   const titles = syncGlossaryToSegmenter(doc)
@@ -342,10 +725,12 @@ export function scanTermMatches(doc: ProseMirrorNode): TextScanResult {
   const termRanges = collectTermRanges(doc)
   const codeRanges = collectCodeRanges(doc)
   const refRanges = collectTermRefRanges(doc)
+  /** 词条弹窗描述编辑：排除自身标题（无外层 term 节点时 enclosingTerm 无效） */
+  const hostTitle = getHostTermTitle()
 
   const autoConfirm: CandidateMatch[] = []
   const fallback: CandidateMatch[] = []
-  const formerHits: TextScanResult['formerHits'] = []
+  const formerHits: FormerHitMatch[] = []
   const taken: Array<{ from: number; to: number }> = []
 
   doc.descendants((node, pos) => {
@@ -359,9 +744,37 @@ export function scanTermMatches(doc: ProseMirrorNode): TextScanResult {
     const text = node.text
     const localTaken: Array<{ from: number; to: number }> = []
 
+    // 1) 曾用名优先于正式词条：先占位，避免「暴击率」被拆成 term[暴击]
+    const formerTitles = Array.from(formerMap.keys())
+    if (formerTitles.length) {
+      const formerSeg = findDictionaryHitsInText(text, formerTitles)
+      for (const hit of formerSeg) {
+        const currents = formerMap.get(hit.title) || []
+        if (!currents.length) continue
+        // 任一当前词条的 ignore 覆盖此处则不提示
+        const ignored = currents.some((t) =>
+          isIgnoredInText(text, hit.from, hit.to, ignoreMap.get(t) || []),
+        )
+        if (ignored) continue
+        const from = textFrom + hit.from
+        const to = textFrom + hit.to
+        if (overlaps(from, to, taken) || overlaps(from, to, refRanges)) continue
+        taken.push({ from, to })
+        localTaken.push({ from: hit.from, to: hit.to })
+        formerHits.push({
+          from,
+          to,
+          formerTitle: hit.title,
+          currentTitles: [...currents],
+        })
+      }
+    }
+
+    // 2) 正式词条整词：自动确认 / 灰线
     const segmentHits = findDictionaryHitsInText(text, titles)
     for (const hit of segmentHits) {
       if (selfTerm && selfTerm.title === hit.title) continue
+      if (hostTitle && hostTitle === hit.title) continue
       const ignores = ignoreMap.get(hit.title) || []
       if (isIgnoredInText(text, hit.from, hit.to, ignores)) continue
       const from = textFrom + hit.from
@@ -375,7 +788,9 @@ export function scanTermMatches(doc: ProseMirrorNode): TextScanResult {
         onlyLocalTitle ||
         shouldSkipAutoConfirm(text, hit.from, hit.to, hit.title)
       ) {
-        const candidates = relatedTitlesForMatch(hit.title, titles)
+        const candidates = relatedTitlesForMatch(hit.title, titles).filter(
+          (t) => t !== hostTitle,
+        )
         fallback.push({
           from,
           to,
@@ -394,28 +809,11 @@ export function scanTermMatches(doc: ProseMirrorNode): TextScanResult {
       })
     }
 
-    // 曾用名（不在当前 titles 中）
-    const formerTitles = Array.from(formerMap.keys())
-    if (formerTitles.length) {
-      const formerSeg = findDictionaryHitsInText(text, formerTitles)
-      for (const hit of formerSeg) {
-        const current = formerMap.get(hit.title)
-        if (!current) continue
-        const from = textFrom + hit.from
-        const to = textFrom + hit.to
-        if (overlaps(from, to, taken) || overlaps(from, to, refRanges)) continue
-        formerHits.push({
-          from,
-          to,
-          formerTitle: hit.title,
-          currentTitle: current,
-        })
-      }
-    }
-
+    // 3) 子串灰线兜底
     const fb = findSubstringFallbackHits(text, titles, localTaken)
     for (const hit of fb) {
       if (selfTerm && selfTerm.title === hit.title) continue
+      if (hostTitle && hostTitle === hit.title) continue
       const ignores = ignoreMap.get(hit.title) || []
       if (isIgnoredInText(text, hit.from, hit.to, ignores)) continue
       const from = textFrom + hit.from
@@ -423,7 +821,9 @@ export function scanTermMatches(doc: ProseMirrorNode): TextScanResult {
       if (overlaps(from, to, taken) || overlaps(from, to, refRanges)) continue
       // 若该子串其实已被更长整词覆盖则跳过
       taken.push({ from, to })
-      const candidates = relatedTitlesForMatch(hit.title, titles)
+      const candidates = relatedTitlesForMatch(hit.title, titles).filter(
+        (t) => t !== hostTitle,
+      )
       fallback.push({
         from,
         to,
@@ -444,4 +844,9 @@ export function scanTermMatches(doc: ProseMirrorNode): TextScanResult {
 /** 仅灰线兜底（装饰用） */
 export function findCandidateMatches(doc: ProseMirrorNode): CandidateMatch[] {
   return scanTermMatches(doc).fallback
+}
+
+/** 曾用名提示命中（装饰用） */
+export function findFormerHits(doc: ProseMirrorNode): FormerHitMatch[] {
+  return scanTermMatches(doc).formerHits
 }

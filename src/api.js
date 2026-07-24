@@ -21,53 +21,134 @@ async function request(url, options = {}) {
   return data
 }
 
+function filePathOf(tab, file) {
+  const t = String(tab || '').trim()
+  const f = String(file || '').trim()
+  if (t && f) return `${t}/${f}`
+  return f || t || ''
+}
+
 export const api = {
-  getTabs: () => request('/api/tabs'),
-  createTab: (name) =>
-    request('/api/tabs', { method: 'POST', body: JSON.stringify({ name }) }),
-  deleteTab: (tab) => request(`/api/tabs/${encodeURIComponent(tab)}`, { method: 'DELETE' }),
-  getFiles: (tab) => request(`/api/tabs/${encodeURIComponent(tab)}/files`),
-  createFile: (tab, name) =>
-    request(`/api/tabs/${encodeURIComponent(tab)}/files`, {
+  getTree: () => request('/api/tree'),
+
+  createFolder: (parentPath, name) =>
+    request('/api/tree/folders', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ parentPath: parentPath || '', name }),
+    }),
+  renameFolder: (pathRel, name) =>
+    request('/api/tree/folders', {
+      method: 'PATCH',
+      body: JSON.stringify({ path: pathRel, name }),
+    }),
+  deleteFolder: (pathRel) =>
+    request('/api/tree/folders', {
+      method: 'DELETE',
+      body: JSON.stringify({ path: pathRel }),
+    }),
+
+  createFileIn: (parentPath, name) =>
+    request('/api/tree/files', {
+      method: 'POST',
+      body: JSON.stringify({ parentPath, name }),
+    }),
+  getFileByPath: (pathRel) =>
+    request(`/api/tree/file?path=${encodeURIComponent(pathRel)}`),
+  saveFileByPath: (pathRel, content) =>
+    request('/api/tree/file', {
+      method: 'PUT',
+      body: JSON.stringify({ path: pathRel, content }),
+    }),
+  renameFileByPath: (pathRel, name) =>
+    request('/api/tree/file', {
+      method: 'PATCH',
+      body: JSON.stringify({ path: pathRel, name }),
+    }),
+  deleteFileByPath: (pathRel) =>
+    request('/api/tree/file', {
+      method: 'DELETE',
+      body: JSON.stringify({ path: pathRel }),
+    }),
+
+  moveTreeEntry: (fromPath, toParentPath, toIndex = -1) =>
+    request('/api/tree/move', {
+      method: 'POST',
+      body: JSON.stringify({ fromPath, toParentPath, toIndex }),
+    }),
+
+  // —— 兼容旧 tab/file 调用（file 可含嵌套子路径）——
+  getTabs: async () => {
+    const { tree } = await request('/api/tree')
+    return {
+      tabs: (tree || []).filter((n) => n.type === 'folder').map((n) => n.name),
+    }
+  },
+  createTab: (name) =>
+    request('/api/tree/folders', {
+      method: 'POST',
+      body: JSON.stringify({ parentPath: '', name }),
+    }),
+  deleteTab: (tab) =>
+    request('/api/tree/folders', {
+      method: 'DELETE',
+      body: JSON.stringify({ path: tab }),
+    }),
+  renameTab: (tab, name) =>
+    request('/api/tree/folders', {
+      method: 'PATCH',
+      body: JSON.stringify({ path: tab, name }),
+    }),
+  getFiles: async (tab) => {
+    const { tree } = await request('/api/tree')
+    const folder = (tree || []).find((n) => n.type === 'folder' && n.name === tab)
+    const files = []
+    const walk = (nodes, prefix) => {
+      for (const n of nodes || []) {
+        if (n.type === 'file') {
+          const rel = prefix ? `${prefix}/${n.name}` : n.name
+          files.push(rel)
+        } else if (n.type === 'folder') {
+          walk(n.children, prefix ? `${prefix}/${n.name}` : n.name)
+        }
+      }
+    }
+    walk(folder?.children || [], '')
+    return { files }
+  },
+  createFile: (tab, name) =>
+    request('/api/tree/files', {
+      method: 'POST',
+      body: JSON.stringify({ parentPath: tab, name }),
     }),
   getFile: (tab, file) =>
-    request(`/api/tabs/${encodeURIComponent(tab)}/files/${encodeURIComponent(file)}`),
+    request(`/api/tree/file?path=${encodeURIComponent(filePathOf(tab, file))}`),
   saveFile: (tab, file, content) =>
-    request(`/api/tabs/${encodeURIComponent(tab)}/files/${encodeURIComponent(file)}`, {
+    request('/api/tree/file', {
       method: 'PUT',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ path: filePathOf(tab, file), content }),
     }),
   renameFile: (tab, file, name) =>
-    request(`/api/tabs/${encodeURIComponent(tab)}/files/${encodeURIComponent(file)}`, {
+    request('/api/tree/file', {
       method: 'PATCH',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ path: filePathOf(tab, file), name }),
     }),
   deleteFile: (tab, file) =>
-    request(`/api/tabs/${encodeURIComponent(tab)}/files/${encodeURIComponent(file)}`, {
+    request('/api/tree/file', {
       method: 'DELETE',
+      body: JSON.stringify({ path: filePathOf(tab, file) }),
     }),
 
   getGlossary: () => request('/api/glossary'),
-  /** 整表写回（含 ignoreContexts / formerTitles） */
   putGlossary: (body) =>
     request('/api/glossary', { method: 'PUT', body: JSON.stringify(body) }),
-  /** 扫描全部 .md 并与 glossary.json 校验同步 */
   syncGlossary: () => request('/api/glossary/sync', { method: 'POST' }),
-  /**
-   * 按文件更新词条
-   * @param {{ sourcePath: string, terms: Array<{ title: string, description: string }> }} body
-   */
   patchGlossaryFile: (body) =>
     request('/api/glossary/file', { method: 'PATCH', body: JSON.stringify(body) }),
-  /** 改名后同步已确认引用并返回冲突列表 */
   renameGlossarySync: (body) =>
     request('/api/glossary/rename-sync', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  /** 批量应用冲突：确认 term[] / 写入 ignoreContexts */
   applyGlossaryConflicts: (body) =>
     request('/api/glossary/apply-conflicts', {
       method: 'POST',

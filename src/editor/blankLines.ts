@@ -176,7 +176,11 @@ function trimTrailingGaps(lines: string[]): string[] {
 /** 编辑器 Markdown → 落盘（无 &nbsp;） */
 export function toStorageMarkdown(markdown: string): string {
   if (!markdown) return ''
-  const lines = markdown.replace(/\r\n/g, '\n').split('\n')
+  const lines = markdown
+    .replace(/\r\n/g, '\n')
+    // 词条确认后插入的输入法落点，落盘时去掉
+    .replace(/\u200b/g, '')
+    .split('\n')
   const mapped = mapOutsideFences(lines, mapTextGapsToStorage)
   return trimTrailingGaps(mapped).join('\n')
 }

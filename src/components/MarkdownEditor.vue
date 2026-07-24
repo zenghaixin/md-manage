@@ -18,13 +18,16 @@ import {
 } from '../editor/shellEvents'
 
 const props = defineProps({
-  tab: { type: String, default: '' },
-  file: { type: String, default: '' },
+  /** 相对 md 根的完整路径，如 `文件夹/a.md` 或根级 `a.md` */
+  path: { type: String, default: '' },
   /** 左侧文件树是否可见 */
   sidebarOpen: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['toggle-sidebar'])
+
+const filePath = computed(() => String(props.path || '').trim())
+const hasFile = computed(() => !!filePath.value)
 
 const content = ref('')
 const loading = ref(false)
@@ -114,7 +117,7 @@ async function setViewMode(mode) {
 }
 
 async function loadFile() {
-  if (!props.tab || !props.file) {
+  if (!filePath.value) {
     content.value = ''
     dirty.value = false
     if (editorReady.value) {
@@ -130,7 +133,7 @@ async function loadFile() {
   error.value = ''
 
   try {
-    const data = await api.getFile(props.tab, props.file)
+    const data = await api.getFileByPath(filePath.value)
     if (token !== loadToken) return
     content.value = data.content
     dirty.value = false
@@ -158,18 +161,17 @@ async function loadFile() {
 
 async function saveFile(force = false) {
   pullFromEditor()
-  if (!props.tab || !props.file || saving.value) return
+  if (!filePath.value || saving.value) return
   if (!force && !dirty.value) return
 
   saving.value = true
   error.value = ''
 
   try {
-    await api.saveFile(props.tab, props.file, content.value)
+    await api.saveFileByPath(filePath.value, content.value)
     dirty.value = false
     await runFileSaveHooks({
-      tab: props.tab,
-      file: props.file,
+      path: filePath.value,
       markdown: content.value,
     })
   } catch (err) {
@@ -190,16 +192,14 @@ function scheduleAutosave() {
 }
 
 watch(
-  () => [props.tab, props.file],
-  async (_next, prev) => {
-    const [prevTab, prevFile] = prev || []
-    if (prevTab && prevFile && dirty.value) {
+  filePath,
+  async (next, prev) => {
+    if (prev && dirty.value) {
       pullFromEditor()
       try {
-        await api.saveFile(prevTab, prevFile, content.value)
+        await api.saveFileByPath(prev, content.value)
         await runFileSaveHooks({
-          tab: prevTab,
-          file: prevFile,
+          path: prev,
           markdown: content.value,
         })
       } catch {
@@ -215,8 +215,8 @@ let stopSaveCurrent = null
 onMounted(() => {
   loadFile()
   scheduleAutosave()
-  stopReload = onReloadFileRequest(({ tab, file }) => {
-    if (tab === props.tab && file === props.file) {
+  stopReload = onReloadFileRequest(({ path }) => {
+    if (path === filePath.value) {
       // 扩展已写盘：以磁盘为准，避免本地 dirty 把外部改写盖回去
       dirty.value = false
       loadFile()
@@ -233,14 +233,13 @@ onUnmounted(() => {
   stopReload = null
   stopSaveCurrent?.()
   stopSaveCurrent = null
-  if (dirty.value && props.tab && props.file) {
+  if (dirty.value && filePath.value) {
     pullFromEditor()
-    const tab = props.tab
-    const file = props.file
+    const path = filePath.value
     const markdown = content.value
     api
-      .saveFile(tab, file, markdown)
-      .then(() => runFileSaveHooks({ tab, file, markdown }))
+      .saveFileByPath(path, markdown)
+      .then(() => runFileSaveHooks({ path, markdown }))
       .catch(() => {})
   }
   editor.value?.destroy()
@@ -251,7 +250,7 @@ defineExpose({ saveFile })
 
 <template>
   <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
-    <div v-if="!tab || !file" class="m-auto max-w-md px-5 py-8 text-center">
+    <div v-if="!hasFile" class="m-auto max-w-md px-5 py-8 text-center">
       <h2 class="mb-3 font-display text-lg font-semibold text-ink sm:text-xl">
         选择或新建一个 Markdown 文件
       </h2>
@@ -314,7 +313,7 @@ defineExpose({ saveFile })
       </button>
 
       <button
-        v-if="tab && file"
+        v-if="hasFile"
         type="button"
         class="inline-flex h-7 w-7 items-center justify-center rounded transition-colors"
         :class="

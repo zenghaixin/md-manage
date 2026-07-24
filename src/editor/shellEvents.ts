@@ -1,10 +1,10 @@
 /**
  * 壳层通用事件总线。
  * 扩展需要「打开某个文档」等壳能力时，通过事件请求，DocsPage 等壳组件统一响应。
- * 禁止扩展直接改 DocsPage 的 activeTab / activeFile。
+ * 路径均为相对 md 根的完整路径，如 `文件夹/a.md` 或根级 `a.md`。
  */
 
-export type OpenFilePayload = { tab: string; file: string }
+export type OpenFilePayload = { path: string }
 
 type Handler<T> = (payload: T) => void
 
@@ -12,34 +12,30 @@ const openFileHandlers = new Set<Handler<OpenFilePayload>>()
 const reloadFileHandlers = new Set<Handler<OpenFilePayload>>()
 const saveCurrentHandlers = new Set<() => void | Promise<void>>()
 
-function parseSourcePath(sourcePath: string): OpenFilePayload | null {
-  const path = String(sourcePath || '').trim()
-  const slash = path.indexOf('/')
-  if (slash <= 0 || slash >= path.length - 1) return null
-  return {
-    tab: path.slice(0, slash),
-    file: path.slice(slash + 1),
-  }
+function normPath(sourcePath: string): string {
+  return String(sourcePath || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '')
+    .trim()
 }
 
-/** 请求打开文档（tab/file） */
+/** 请求打开文档（完整相对路径） */
 export function requestOpenFile(payload: OpenFilePayload): void {
-  const tab = String(payload?.tab || '').trim()
-  const file = String(payload?.file || '').trim()
-  if (!tab || !file) return
+  const path = normPath(payload?.path)
+  if (!path) return
   for (const handler of openFileHandlers) {
     try {
-      handler({ tab, file })
+      handler({ path })
     } catch (err) {
       console.warn('[shellEvents] open-file handler failed:', err)
     }
   }
 }
 
-/** 从 `tab/file.md` 形式的路径打开 */
+/** 从相对路径打开（支持根级 `file.md` 与嵌套 `a/b/c.md`） */
 export function requestOpenFilePath(sourcePath: string): void {
-  const parsed = parseSourcePath(sourcePath)
-  if (parsed) requestOpenFile(parsed)
+  const path = normPath(sourcePath)
+  if (path) requestOpenFile({ path })
 }
 
 /** DocsPage 等注册监听；返回取消函数 */
@@ -52,12 +48,11 @@ export function onOpenFileRequest(handler: Handler<OpenFilePayload>): () => void
 
 /** 请求重新加载已打开的文档内容（扩展改写了磁盘文件后） */
 export function requestReloadFile(payload: OpenFilePayload): void {
-  const tab = String(payload?.tab || '').trim()
-  const file = String(payload?.file || '').trim()
-  if (!tab || !file) return
+  const path = normPath(payload?.path)
+  if (!path) return
   for (const handler of reloadFileHandlers) {
     try {
-      handler({ tab, file })
+      handler({ path })
     } catch (err) {
       console.warn('[shellEvents] reload-file handler failed:', err)
     }
@@ -65,8 +60,8 @@ export function requestReloadFile(payload: OpenFilePayload): void {
 }
 
 export function requestReloadFilePath(sourcePath: string): void {
-  const parsed = parseSourcePath(sourcePath)
-  if (parsed) requestReloadFile(parsed)
+  const path = normPath(sourcePath)
+  if (path) requestReloadFile({ path })
 }
 
 /** MarkdownEditor 注册：当前文件被外部改写时重新拉取 */

@@ -6,9 +6,9 @@ import { useGlossaryStore } from '../../../stores/glossary'
 import {
   TERM_GLOSSARY_ID,
   TERM_REF_CLASS,
-  TERM_REF_INVALID_CLASS,
   TERM_REF_NODE_NAME,
 } from './constants'
+import { termDashClass } from './dash'
 import {
   buildShortIgnoreContext,
   demoteTermToCandidate,
@@ -77,7 +77,7 @@ export const TermRefNode = Node.create({
         'data-extension': TERM_GLOSSARY_ID,
         class: valid
           ? TERM_REF_CLASS
-          : `${TERM_REF_CLASS} ${TERM_REF_INVALID_CLASS}`,
+          : `${TERM_REF_CLASS} ${termDashClass('invalid')}`,
         title: valid ? undefined : '没有对应词条，点击可新建',
       }),
       title,
@@ -101,7 +101,7 @@ export const TermRefNode = Node.create({
         const valid = glossaryHasTitle(t)
         dom.className = valid
           ? TERM_REF_CLASS
-          : `${TERM_REF_CLASS} ${TERM_REF_INVALID_CLASS}`
+          : `${TERM_REF_CLASS} ${termDashClass('invalid')}`
         if (valid) dom.removeAttribute('title')
         else dom.title = '没有对应词条，点击可新建'
       }

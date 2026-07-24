@@ -24,13 +24,15 @@ import {
   TERM_NODE_NAME,
   TERM_REF_CLASS,
   TERM_REF_CANDIDATE_CLASS,
+  TERM_REF_FORMER_CLASS,
   TERM_REF_INVALID_CLASS,
   TERM_REF_NODE_NAME,
   TERM_POPOVER_CLASS,
   TERM_PICKER_CLASS,
 } from './constants'
+import { termDashClass } from './dash'
 
-import { setActiveTermEditorView } from './editorViewRef'
+import { setActiveTermEditorView, setHostTermTitle } from './editorViewRef'
 import { ensureTermGlossaryStyles } from './styles'
 import {
   confirmTitleInMarkdown,
@@ -43,8 +45,13 @@ import {
 } from './syntax'
 import { bindTermFlashView } from './flashTerm'
 import {
+  buildShortIgnoreContext,
   collectGlossary,
   findCandidateMatches,
+  scanTermMatches,
+  findConfirmHitOnMatchBreak,
+  findConfirmHitOnMaximalMatch,
+  findConfirmHitOnExtendableIdle,
 } from './match'
 import {
   buildAutoConfirmTransaction,
@@ -249,12 +256,15 @@ function highlightCandidatesInElement(
         const to = from + m[0].length
         if (taken.some((r) => from < r.to && to > r.from)) continue
         taken.push({ from, to })
-        const candidates = relatedTitlesForMatch(termTitle, titles)
+        const candidates = relatedTitlesForMatch(termTitle, titles).filter(
+          (t) => t !== selfTitle,
+        )
+        if (!candidates.length) continue
         hits.push({
           from,
           to,
           title: termTitle,
-          candidates: candidates.length ? candidates : [termTitle],
+          candidates,
         })
       }
     }
@@ -268,7 +278,7 @@ function highlightCandidatesInElement(
         frag.appendChild(document.createTextNode(text.slice(cursor, hit.from)))
       }
       const span = document.createElement('span')
-      span.className = TERM_REF_CANDIDATE_CLASS
+      span.className = termDashClass('candidate')
       span.setAttribute('data-term-title', hit.title)
       span.setAttribute('data-term-candidates', hit.candidates.join('\u0001'))
       span.textContent = text.slice(hit.from, hit.to)
@@ -310,7 +320,7 @@ function renderDescriptionHtml(
       const known = titles.includes(title)
       const cls = known
         ? TERM_REF_CLASS
-        : `${TERM_REF_CLASS} ext-term-ref-invalid`
+        : `${TERM_REF_CLASS} ${termDashClass('invalid')}`
       const tip = known ? '' : ' title="没有对应词条，点击可新建"'
       return `<span class="${cls}" data-term-title="${escapeHtml(title)}" data-extension="${TERM_GLOSSARY_ID}"${tip}>${escapeHtml(title)}</span>`
     })
@@ -324,18 +334,32 @@ function renderDescriptionHtml(
 }
 
 function buildDecorations(doc: ProseMirrorNode): DecorationSet {
-  const matches = findCandidateMatches(doc)
-  if (!matches.length) return DecorationSet.empty
+  const { fallback, formerHits } = scanTermMatches(doc)
+  const decorations: ReturnType<typeof Decoration.inline>[] = []
 
-  const decorations = matches.map((match) =>
-    Decoration.inline(match.from, match.to, {
-      class: TERM_REF_CANDIDATE_CLASS,
-      'data-term-title': match.matchTitle,
-      'data-term-candidates': match.candidates.join('\u0001'),
-      'data-extension': TERM_GLOSSARY_ID,
-    }),
-  )
+  for (const hit of formerHits) {
+    decorations.push(
+      Decoration.inline(hit.from, hit.to, {
+        class: termDashClass('former'),
+        'data-term-former': hit.formerTitle,
+        'data-term-current-titles': hit.currentTitles.join('\u0001'),
+        'data-extension': TERM_GLOSSARY_ID,
+      }),
+    )
+  }
 
+  for (const match of fallback) {
+    decorations.push(
+      Decoration.inline(match.from, match.to, {
+        class: termDashClass('candidate'),
+        'data-term-title': match.matchTitle,
+        'data-term-candidates': match.candidates.join('\u0001'),
+        'data-extension': TERM_GLOSSARY_ID,
+      }),
+    )
+  }
+
+  if (!decorations.length) return DecorationSet.empty
   return DecorationSet.create(doc, decorations)
 }
 
@@ -392,15 +416,7 @@ class TermDialog {
   /** 用户是否已手动拖过尺寸；未拖过则高度随内容自适应 */
   private userSized = false
   /** 弹窗内灰线候选选择器 */
-  private dialogPicker: {
-    show: (
-      anchor: HTMLElement,
-      candidates: string[],
-      onPick: (title: string) => void,
-    ) => void
-    hide: () => void
-    destroy: () => void
-  } | null = null
+  private dialogPicker: TermConfirmPicker | null = null
 
   constructor(
     title: string,
@@ -641,6 +657,7 @@ class TermDialog {
     }
     this.descEditor = null
     this.applyingDesc = false
+    setHostTermTitle(null)
   }
 
   private pullDraftFromInputs() {
@@ -678,9 +695,48 @@ class TermDialog {
       this.sourceBtn.setAttribute('aria-pressed', isSource ? 'true' : 'false')
     }
     if (this.editBtn) this.editBtn.hidden = this.editing
-    if (this.pathBtn) this.pathBtn.hidden = this.editing
+    if (this.pathBtn) {
+      this.pathBtn.hidden = this.editing
+      const path = this.term.sourcePath
+      this.pathBtn.title = path ? `打开 ${path}` : '无来源路径'
+      this.pathBtn.setAttribute('aria-label', this.pathBtn.title)
+      this.pathBtn.disabled = !path
+    }
     if (this.saveBtn) this.saveBtn.hidden = !this.editing
     if (this.cancelBtn) this.cancelBtn.hidden = !this.editing
+  }
+
+  /**
+   * 外部词条变更时同步到已打开弹窗（浏览态）。
+   * 弹窗内正在编辑时不覆盖草稿，避免打断用户输入。
+   */
+  syncFromResolved(term: ResolvedTerm, titles?: string[]) {
+    if (!this.el || this.editing || this.saving) return
+
+    const nextTitle = String(term.title ?? this.title).trim() || this.title
+    const nextDesc = String(term.description ?? '')
+    const nextPath = String(term.sourcePath ?? '')
+    const same =
+      this.term.title === nextTitle &&
+      this.term.description === nextDesc &&
+      this.term.sourcePath === nextPath
+
+    if (titles) this.titles = titles
+    // 内容没变就不要重绘（否则每次文档 transaction 都会拆 DOM，极易卡死）
+    if (same) return
+
+    this.term = {
+      title: nextTitle,
+      description: nextDesc,
+      sourcePath: nextPath,
+    }
+    this.title = nextTitle
+    this.draftTitle = nextTitle
+    this.draftDescription = nextDesc
+    this.el.setAttribute('data-term-title', nextTitle)
+    this.renderHeaderTitle()
+    this.renderBody()
+    this.syncChrome()
   }
 
   /** 标题区：浏览为文本，编辑为可输入 */
@@ -727,6 +783,8 @@ class TermDialog {
         host.className = 'ext-term-popover-desc-editor'
         this.bodyEl.appendChild(host)
         this.applyingDesc = true
+        // 描述内与当前词条同名：不灰线、不弹确认
+        setHostTermTitle(selfTitle)
         this.descEditor = new Editor({
           element: host,
           extensions: [StarterKit, Markdown, TermRefNode, TermGlossaryHighlight],
@@ -783,9 +841,14 @@ class TermDialog {
           .split('\u0001')
           .map((s) => s.trim())
           .filter(Boolean)
-        if (!this.dialogPicker) this.dialogPicker = new CandidatePicker()
-        this.dialogPicker.show(candidate, candidates, (picked) => {
-          void this.confirmCandidateInDescription(matchTitle.trim(), picked)
+        if (!this.dialogPicker) this.dialogPicker = new TermConfirmPicker()
+        this.dialogPicker.show({
+          anchor: candidate,
+          label: '确认是否为词条',
+          titles: candidates,
+          onPick: (picked) => {
+            void this.confirmCandidateInDescription(matchTitle.trim(), picked)
+          },
         })
         return
       }
@@ -835,18 +898,15 @@ class TermDialog {
       const title = this.term.title
       const sourcePath = this.term.sourcePath
       if (sourcePath) {
-        const slash = sourcePath.indexOf('/')
-        const tab = sourcePath.slice(0, slash)
-        const file = sourcePath.slice(slash + 1)
-        const { content } = await api.getFile(tab, file)
+        const { content } = await api.getFileByPath(sourcePath)
         const nextMd = replaceTermBlock(
           content,
           title,
           title,
           nextDescription,
         )
-        await api.saveFile(tab, file, nextMd)
-        await useGlossaryStore().syncFile(tab, file, nextMd)
+        await api.saveFileByPath(sourcePath, nextMd)
+        await useGlossaryStore().syncFileByPath(sourcePath, nextMd)
         requestReloadFilePath(sourcePath)
       } else {
         const store = useGlossaryStore()
@@ -934,17 +994,14 @@ class TermDialog {
       if (renamed) suppressAutoConfirmForTitle(newTitle)
 
       if (sourcePath) {
-        const slash = sourcePath.indexOf('/')
-        const tab = sourcePath.slice(0, slash)
-        const file = sourcePath.slice(slash + 1)
-        const { content } = await api.getFile(tab, file)
+        const { content } = await api.getFileByPath(sourcePath)
         const nextMd = replaceTermBlock(
           content,
           oldTitle || this.term.title,
           newTitle,
           newDescription,
         )
-        await api.saveFile(tab, file, nextMd)
+        await api.saveFileByPath(sourcePath, nextMd)
 
         if (renamed) {
           await commitTermRename({
@@ -955,7 +1012,7 @@ class TermDialog {
             saveCurrent: false,
           })
         } else {
-          await store.syncFile(tab, file, nextMd)
+          await store.syncFileByPath(sourcePath, nextMd)
           requestReloadFilePath(sourcePath)
         }
       } else if (renamed) {
@@ -1169,9 +1226,45 @@ class TermDialogManager {
   private zIndex = 10000
   private doc: ProseMirrorNode | null = null
   private onKeyDown: ((e: KeyboardEvent) => void) | null = null
+  private stopStoreWatch: (() => void) | null = null
+  private refreshTimer: ReturnType<typeof setTimeout> | null = null
 
-  setDoc(doc: ProseMirrorNode | null) {
+  setDoc(doc: ProseMirrorNode | null, docChanged = false) {
     this.doc = doc
+    // 仅文档内容变化时刷新弹窗；选区变化也会走 apply，绝不能每次都刷新
+    if (docChanged && this.dialogs.size) this.scheduleRefresh()
+  }
+
+  /** 文档 / 词库变更后，刷新已打开且非编辑中的弹窗 */
+  private scheduleRefresh() {
+    if (this.refreshTimer) clearTimeout(this.refreshTimer)
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null
+      this.refreshOpen()
+    }, 200)
+  }
+
+  private refreshOpen() {
+    if (!this.dialogs.size) return
+    const titles = allTitles(this.doc)
+    for (const [key, dialog] of [...this.dialogs.entries()]) {
+      if (!dialog.isOpen) continue
+      const term = resolveTerm(key, this.doc)
+      // 词条已从词库与文档消失：仍展示空描述，不强制关窗
+      dialog.syncFromResolved(term, titles)
+    }
+  }
+
+  private ensureStoreWatch() {
+    if (this.stopStoreWatch) return
+    try {
+      const store = useGlossaryStore()
+      this.stopStoreWatch = store.$subscribe(() => {
+        if (this.dialogs.size) this.scheduleRefresh()
+      })
+    } catch {
+      // Pinia 未就绪时忽略
+    }
   }
 
   private nextZ() {
@@ -1212,10 +1305,13 @@ class TermDialogManager {
     if (existing?.isOpen) {
       existing.focus()
       existing.flash()
+      // 再次点开时也拉一次最新内容
+      existing.syncFromResolved(resolveTerm(key, this.doc), allTitles(this.doc))
       return
     }
 
     this.ensureKeys()
+    this.ensureStoreWatch()
     const term = resolveTerm(key, this.doc)
     const titles = allTitles(this.doc)
     const dialog = new TermDialog(
@@ -1247,6 +1343,12 @@ class TermDialogManager {
   }
 
   destroy() {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer)
+      this.refreshTimer = null
+    }
+    this.stopStoreWatch?.()
+    this.stopStoreWatch = null
     for (const dialog of [...this.dialogs.values()]) {
       dialog.destroy()
     }
@@ -1258,70 +1360,204 @@ class TermDialogManager {
   }
 }
 
-/**
- * 未确认候选：点击弹出选择面板。
- */
-class CandidatePicker {
-  private el: HTMLDivElement | null = null
+type FormerPickerAction = 'switch' | 'once' | 'never'
 
-  hide() {
-    this.el?.remove()
-    this.el = null
+type TermConfirmPickerAnchor =
+  | HTMLElement
+  | { left: number; top: number; bottom: number; right: number }
+
+type TermConfirmPickerSecondary = {
+  /** 展示与快捷键（Esc 仅展示，实际由 Escape 键处理） */
+  key: string
+  label: string
+  onSelect: () => void
+}
+
+type TermConfirmPickerShowOptions = {
+  anchor: TermConfirmPickerAnchor
+  label: string
+  titles: string[]
+  onPick: (title: string) => void
+  /** 额外底部操作（如曾用名的 0 保存原样 / - 忽略）；Esc 取消始终存在 */
+  secondary?: TermConfirmPickerSecondary[]
+  promptKey?: string
+  onDismiss?: () => void
+}
+
+/**
+ * 统一确认弹窗：1–9 选词条，Esc 取消；可选底部次要操作（曾用名 once/never）。
+ */
+class TermConfirmPicker {
+  private el: HTMLDivElement | null = null
+  private onKeyDown: ((e: KeyboardEvent) => void) | null = null
+  private promptKey = ''
+
+  get isOpen() {
+    return !!this.el
   }
 
-  show(
-    anchor: HTMLElement,
-    candidates: string[],
-    onPick: (title: string) => void,
-  ) {
+  get currentKey() {
+    return this.promptKey
+  }
+
+  hide() {
+    if (this.onKeyDown) {
+      document.removeEventListener('keydown', this.onKeyDown, true)
+      this.onKeyDown = null
+    }
+    this.el?.remove()
+    this.el = null
+    this.promptKey = ''
+  }
+
+  show(opts: TermConfirmPickerShowOptions) {
     this.hide()
+    const list = opts.titles.filter(Boolean)
+    if (!list.length) return
+
+    this.promptKey = opts.promptKey || ''
     const el = document.createElement('div')
     el.className = TERM_PICKER_CLASS
     el.setAttribute('data-extension', TERM_GLOSSARY_ID)
 
     const label = document.createElement('div')
     label.className = 'ext-term-picker-label'
-    label.textContent = candidates.length > 1 ? '选择词条' : '确认词条'
+    label.textContent = opts.label
     el.appendChild(label)
 
-    const list = document.createElement('div')
-    list.className = 'ext-term-picker-list'
-    for (const title of candidates) {
+    const pickRuns: Array<() => void> = []
+    const listEl = document.createElement('div')
+    listEl.className = 'ext-term-picker-list'
+    list.forEach((title, i) => {
+      const idx = i + 1
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = 'ext-term-picker-item'
-      btn.textContent = title
+      btn.innerHTML = `<span class="ext-term-picker-hotkey">${idx}:</span><span>「${escapeHtml(title)}」</span>`
+      const pick = () => {
+        this.hide()
+        opts.onPick(title)
+      }
+      pickRuns.push(pick)
       btn.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        this.hide()
-        onPick(title)
+        pick()
       })
-      list.appendChild(btn)
+      listEl.appendChild(btn)
+    })
+    el.appendChild(listEl)
+
+    const dismiss = () => {
+      this.hide()
+      opts.onDismiss?.()
     }
-    el.appendChild(list)
+
+    const secondaryRuns = new Map<string, () => void>()
+    const foot = document.createElement('div')
+    foot.className = 'ext-term-picker-foot'
+    for (const item of opts.secondary || []) {
+      const run = () => {
+        this.hide()
+        item.onSelect()
+      }
+      secondaryRuns.set(item.key, run)
+      if (item.key === '-') secondaryRuns.set('_', run)
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'ext-term-picker-item is-muted'
+      btn.innerHTML = `<span class="ext-term-picker-hotkey">${escapeHtml(item.key)}:</span><span>${escapeHtml(item.label)}</span>`
+      btn.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        run()
+      })
+      foot.appendChild(btn)
+    }
+    const cancelBtn = document.createElement('button')
+    cancelBtn.type = 'button'
+    cancelBtn.className = 'ext-term-picker-item is-muted'
+    cancelBtn.innerHTML =
+      '<span class="ext-term-picker-hotkey">Esc:</span><span>取消</span>'
+    cancelBtn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      dismiss()
+    })
+    foot.appendChild(cancelBtn)
+    el.appendChild(foot)
+
     document.body.appendChild(el)
     this.el = el
+    positionPicker(el, opts.anchor)
+    this.bindKeys(pickRuns, secondaryRuns, dismiss)
+  }
 
-    const rect = anchor.getBoundingClientRect()
-    const pad = 6
-    let left = rect.left
-    let top = rect.bottom + pad
-    requestAnimationFrame(() => {
-      const w = el.offsetWidth
-      const h = el.offsetHeight
-      if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8
-      if (left < 8) left = 8
-      if (top + h > window.innerHeight - 8) top = rect.top - h - pad
-      if (top < 8) top = 8
-      el.style.left = `${Math.round(left)}px`
-      el.style.top = `${Math.round(top)}px`
-    })
+  private bindKeys(
+    pickRuns: Array<() => void>,
+    secondaryRuns: Map<string, () => void>,
+    dismiss: () => void,
+  ) {
+    this.onKeyDown = (e: KeyboardEvent) => {
+      if (!this.el) return
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        dismiss()
+        return
+      }
+      const secondary = secondaryRuns.get(e.key)
+      if (secondary) {
+        e.preventDefault()
+        e.stopPropagation()
+        secondary()
+        return
+      }
+      if (e.key >= '1' && e.key <= '9') {
+        const i = Number(e.key) - 1
+        if (i >= 0 && i < pickRuns.length) {
+          e.preventDefault()
+          e.stopPropagation()
+          pickRuns[i]()
+        }
+      }
+    }
+    document.addEventListener('keydown', this.onKeyDown, true)
   }
 
   destroy() {
     this.hide()
   }
+}
+
+function positionPicker(
+  el: HTMLElement,
+  anchor:
+    | HTMLElement
+    | { left: number; top: number; bottom: number; right: number },
+) {
+  const rect =
+    anchor instanceof HTMLElement
+      ? anchor.getBoundingClientRect()
+      : {
+          left: anchor.left,
+          right: anchor.right,
+          top: anchor.top,
+          bottom: anchor.bottom,
+        }
+  const pad = 6
+  let left = rect.left
+  let top = rect.bottom + pad
+  requestAnimationFrame(() => {
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8
+    if (left < 8) left = 8
+    if (top + h > window.innerHeight - 8) top = rect.top - h - pad
+    if (top < 8) top = 8
+    el.style.left = `${Math.round(left)}px`
+    el.style.top = `${Math.round(top)}px`
+  })
 }
 
 /**
@@ -1376,12 +1612,116 @@ export const TermGlossaryHighlight = Extension.create({
 
   addProseMirrorPlugins() {
     const manager = new TermDialogManager()
-    const picker = new CandidatePicker()
+    const picker = new TermConfirmPicker()
     const notTermBar = new NotTermBar()
 
     const hideUi = () => {
       picker.hide()
       notTermBar.hide()
+    }
+
+    const formerSecondary = (
+      onAction: (action: FormerPickerAction, title?: string) => void,
+    ): TermConfirmPickerSecondary[] => [
+      {
+        key: '0',
+        label: '保存原样',
+        onSelect: () => onAction('once'),
+      },
+      {
+        key: '-',
+        label: '忽略',
+        onSelect: () => onAction('never'),
+      },
+    ]
+
+    const showCandidateConfirm = (
+      anchor: TermConfirmPickerAnchor,
+      titles: string[],
+      onPick: (title: string) => void,
+      promptKey = '',
+      onDismiss?: () => void,
+    ) => {
+      picker.show({
+        anchor,
+        label: '确认是否为词条',
+        titles,
+        onPick,
+        promptKey,
+        onDismiss,
+      })
+    }
+
+    const showFormerConfirm = (
+      anchor: TermConfirmPickerAnchor,
+      formerTitle: string,
+      currentTitles: string[],
+      onAction: (action: FormerPickerAction, title?: string) => void,
+      promptKey = '',
+      onDismiss?: () => void,
+    ) => {
+      picker.show({
+        anchor,
+        label: `「${formerTitle}」是否修改为以下词条？`,
+        titles: currentTitles,
+        onPick: (title) => onAction('switch', title),
+        secondary: formerSecondary(onAction),
+        promptKey,
+        onDismiss,
+      })
+    }
+
+    const refreshDecorations = (view: EditorView) => {
+      view.dispatch(view.state.tr.setMeta(pluginKey, { refresh: true }))
+    }
+
+    const handleFormerAction = async (
+      view: EditorView,
+      from: number,
+      to: number,
+      formerTitle: string,
+      currentTitles: string[],
+      action: FormerPickerAction,
+      pickedTitle?: string,
+    ) => {
+      const store = useGlossaryStore()
+      if (action === 'switch' && pickedTitle) {
+        const tr = view.state.tr
+        if (
+          !replaceRangeWithTermRef(
+            tr,
+            view.state.schema,
+            from,
+            to,
+            pickedTitle,
+          )
+        ) {
+          return
+        }
+        tr.setMeta(convertPluginKey, { skip: true })
+        view.dispatch(tr)
+        const others = currentTitles.filter((t) => t !== pickedTitle)
+        if (others.length) {
+          await store.removeFormerTitleFrom(formerTitle, others)
+        }
+        refreshDecorations(view)
+        return
+      }
+      if (action === 'once') {
+        const ctx = buildShortIgnoreContext(
+          view.state.doc,
+          from,
+          to,
+          formerTitle,
+        )
+        if (ctx) await store.addIgnoreContext(ctx, currentTitles)
+        refreshDecorations(view)
+        return
+      }
+      if (action === 'never') {
+        await store.removeFormerTitleFrom(formerTitle, currentTitles)
+        refreshDecorations(view)
+      }
     }
 
     return [
@@ -1400,37 +1740,227 @@ export const TermGlossaryHighlight = Extension.create({
             return value
           },
         },
-        // 防抖自动确认：IME / 连续输入停约 400ms 后再写 term[]
+        // 边输入边校验：新字无法延续最长匹配时立刻弹窗；停手时补弹「已完整且无法再延长」的匹配
         view(editorView) {
           setActiveTermEditorView(editorView)
           let timer: ReturnType<typeof setTimeout> | null = null
           let composing = false
-          /** 跳过由本插件 dispatch 触发的二次 schedule，避免与输入打架 */
           let skipSchedule = false
 
-          const run = () => {
+          const coordsForRange = (
+            view: EditorView,
+            from: number,
+            to: number,
+          ) => {
+            try {
+              const a = view.coordsAtPos(from)
+              const b = view.coordsAtPos(to)
+              return {
+                left: Math.min(a.left, b.left),
+                right: Math.max(a.right, b.right),
+                top: Math.min(a.top, b.top),
+                bottom: Math.max(a.bottom, b.bottom),
+              }
+            } catch {
+              return null
+            }
+          }
+
+          const openFound = (
+            view: EditorView,
+            found:
+              | { kind: 'former'; hit: import('./match').FormerHitMatch }
+              | { kind: 'candidate'; hit: import('./match').CandidateMatch },
+          ) => {
+            const resumeAt = found.hit.to
+            const resumeTyping = () => {
+              requestAnimationFrame(() => {
+                if (view.isDestroyed) return
+                try {
+                  view.focus()
+                  const pos = Math.min(
+                    Math.max(1, resumeAt),
+                    view.state.doc.content.size,
+                  )
+                  view.dispatch(
+                    view.state.tr.setSelection(
+                      selectionAtEditablePos(view.state.doc, pos),
+                    ),
+                  )
+                } catch {
+                  try {
+                    view.focus()
+                  } catch {
+                    // ignore
+                  }
+                }
+              })
+            }
+
+            // 弹出即失焦，避免用户继续打字冲掉确认
+            try {
+              view.dom.blur()
+            } catch {
+              // ignore
+            }
+
+            if (found.kind === 'former') {
+              const { hit } = found
+              const key = `former:${hit.from}:${hit.to}:${hit.formerTitle}`
+              if (picker.currentKey === key && picker.isOpen) return
+              const anchor = coordsForRange(view, hit.from, hit.to)
+              if (!anchor) {
+                resumeTyping()
+                return
+              }
+              showFormerConfirm(
+                anchor,
+                hit.formerTitle,
+                hit.currentTitles,
+                (action, title) => {
+                  void Promise.resolve(
+                    handleFormerAction(
+                      view,
+                      hit.from,
+                      hit.to,
+                      hit.formerTitle,
+                      hit.currentTitles,
+                      action,
+                      title,
+                    ),
+                  ).finally(resumeTyping)
+                },
+                key,
+                resumeTyping,
+              )
+              return
+            }
+
+            const { hit } = found
+            const key = `cand:${hit.from}:${hit.to}:${hit.matchTitle}`
+            if (picker.currentKey === key && picker.isOpen) return
+            const anchor = coordsForRange(view, hit.from, hit.to)
+            if (!anchor) {
+              resumeTyping()
+              return
+            }
+            showCandidateConfirm(
+              anchor,
+              hit.candidates,
+              (title) => {
+                const tr = view.state.tr
+                if (
+                  !replaceRangeWithTermRef(
+                    tr,
+                    view.state.schema,
+                    hit.from,
+                    hit.to,
+                    title,
+                  )
+                ) {
+                  resumeTyping()
+                  return
+                }
+                tr.setMeta(convertPluginKey, { skip: true })
+                view.dispatch(tr)
+                resumeTyping()
+              },
+              key,
+              resumeTyping,
+            )
+          }
+
+          /** 最长且不可延长 → 立刻弹（曾用名 / 抑制自动确认） */
+          const tryMaximalPrompt = (view: EditorView): boolean => {
+            if (view.isDestroyed) return false
+            if (document.activeElement?.closest?.('.ext-term-title')) return false
+            if (!view.state.selection.empty) return false
+            if (picker.isOpen) return false
+            const found = findConfirmHitOnMaximalMatch(
+              view.state.doc,
+              view.state.selection.from,
+            )
+            if (!found) return false
+            openFound(view, found)
+            return true
+          }
+
+          const tryBreakPrompt = (view: EditorView): boolean => {
+            if (view.isDestroyed) return false
+            if (document.activeElement?.closest?.('.ext-term-title')) return false
+            if (!view.state.selection.empty) return false
+            if (picker.isOpen) return false
+            const found = findConfirmHitOnMatchBreak(
+              view.state.doc,
+              view.state.selection.from,
+            )
+            if (!found) return false
+            openFound(view, found)
+            return true
+          }
+
+          /** 还可延长（如 暴击→暴击率）→ 停顿后弹相关 */
+          const tryExtendablePrompt = (view: EditorView): boolean => {
+            if (view.isDestroyed) return false
+            if (document.activeElement?.closest?.('.ext-term-title')) return false
+            if (!view.state.selection.empty) return false
+            if (picker.isOpen) return false
+            const found = findConfirmHitOnExtendableIdle(
+              view.state.doc,
+              view.state.selection.from,
+            )
+            if (!found) return false
+            openFound(view, found)
+            return true
+          }
+
+          const runIdle = () => {
             if (composing || editorView.isDestroyed) return
             if (convertPluginKey.getState(editorView.state)?.skipAfterUnconfirm) {
               return
             }
-            // pendingManualConfirm 非空只禁止「裸文案自动包 term[]」，
-            // 不要拆已确认的 termRef，否则用户刚确认又会被拆回灰线
+            if (document.activeElement?.closest?.('.ext-term-title')) return
+            if (picker.isOpen) return
+
+            // 先静默确认已完整且不可延长的正式标题
             const tr = editorView.state.tr
             const next = buildAutoConfirmTransaction(tr, editorView.state.schema)
-            if (!next) return
-            next.setMeta(convertPluginKey, { skip: true })
-            skipSchedule = true
-            editorView.dispatch(next)
-            try {
-              editorView.focus()
-            } catch {
-              // ignore
+            if (next) {
+              next.setMeta(convertPluginKey, { skip: true })
+              skipSchedule = true
+              editorView.dispatch(next)
+              // focus 后浏览器可能误选中 atom，再校正到后方
+              requestAnimationFrame(() => {
+                if (editorView.isDestroyed) return
+                try {
+                  const sel = editorView.state.selection
+                  if (
+                    sel instanceof NodeSelection &&
+                    sel.node.type.name === TERM_REF_NODE_NAME
+                  ) {
+                    editorView.dispatch(
+                      editorView.state.tr.setSelection(
+                        selectionAtEditablePos(editorView.state.doc, sel.to),
+                      ),
+                    )
+                  }
+                  if (!document.activeElement?.closest?.('.ext-term-title')) {
+                    editorView.focus()
+                  }
+                } catch {
+                  // ignore
+                }
+              })
             }
+
+            tryMaximalPrompt(editorView) ||
+              tryBreakPrompt(editorView) ||
+              tryExtendablePrompt(editorView)
           }
 
-          const schedule = () => {
+          const scheduleIdle = () => {
             if (timer) clearTimeout(timer)
-            timer = setTimeout(run, 400)
+            timer = setTimeout(runIdle, 350)
           }
 
           const onCompStart = () => {
@@ -1439,31 +1969,48 @@ export const TermGlossaryHighlight = Extension.create({
           }
           const onCompEnd = () => {
             composing = false
-            schedule()
+            // 组字结束：不可延长则立刻弹；否则等停顿
+            if (!tryMaximalPrompt(editorView) && !tryBreakPrompt(editorView)) {
+              scheduleIdle()
+            }
           }
           editorView.dom.addEventListener('compositionstart', onCompStart)
           editorView.dom.addEventListener('compositionend', onCompEnd)
-          // 初次进入也扫一次（打开已有文档）
-          schedule()
+          scheduleIdle()
 
           return {
             update(view, prevState) {
+              if (composing) return
+              // 弹窗期间不处理输入驱动的更新（编辑器已失焦）
+              if (picker.isOpen) return
+
               if (view.state.doc.eq(prevState.doc)) return
+
               if (skipSchedule) {
                 skipSchedule = false
+                tryMaximalPrompt(view) || tryBreakPrompt(view)
                 return
               }
-              // 用户点 ×：清掉待执行的自动确认，并跳过本轮 schedule
               if (convertPluginKey.getState(view.state)?.skipAfterUnconfirm) {
                 if (timer) clearTimeout(timer)
                 timer = null
                 return
               }
-              schedule()
+
+              // 不可延长 → 立刻弹；可延长 → 等停顿
+              if (tryMaximalPrompt(view) || tryBreakPrompt(view)) {
+                if (timer) clearTimeout(timer)
+                return
+              }
+
+              scheduleIdle()
             },
             destroy() {
               if (timer) clearTimeout(timer)
-              editorView.dom.removeEventListener('compositionstart', onCompStart)
+              editorView.dom.removeEventListener(
+                'compositionstart',
+                onCompStart,
+              )
               editorView.dom.removeEventListener('compositionend', onCompEnd)
               setActiveTermEditorView(null)
             },
@@ -1475,14 +2022,38 @@ export const TermGlossaryHighlight = Extension.create({
            * 先把光标挪到 atom 后方再插入字符。
            */
           handleKeyDown(view, event) {
+            // 确认弹窗打开时禁止继续往正文打字（选词数字 / 固定操作键由弹窗 capture 处理）
+            if (picker.isOpen) {
+              if (event.key >= '1' && event.key <= '9') return true
+              if (
+                event.key === '0' ||
+                event.key === '-' ||
+                event.key === '_' ||
+                event.key === 'Escape'
+              ) {
+                return true
+              }
+              event.preventDefault()
+              return true
+            }
+
             const { selection } = view.state
             if (!(selection instanceof NodeSelection)) return false
             if (selection.node.type.name !== TERM_REF_NODE_NAME) return false
             if (event.ctrlKey || event.metaKey || event.altKey) return false
-            if (event.isComposing) return false
+
+            // 输入法组字前先把光标挪到 atom 后，避免整颗被替换
+            if (event.key === 'Process' || event.isComposing) {
+              view.dispatch(
+                view.state.tr.setSelection(
+                  selectionAtEditablePos(view.state.doc, selection.to),
+                ),
+              )
+              return false
+            }
 
             const isPrintable =
-              event.key.length === 1 || event.key === 'Enter' || event.key === 'Process'
+              event.key.length === 1 || event.key === 'Enter'
             if (!isPrintable) return false
 
             const after = selection.to
@@ -1502,9 +2073,36 @@ export const TermGlossaryHighlight = Extension.create({
           },
           /** DOM 选区若误入 contenteditable=false 的 atom，校正回可编辑位置 */
           handleDOMEvents: {
+            compositionstart(view) {
+              const sel = view.state.selection
+              if (
+                sel instanceof NodeSelection &&
+                sel.node.type.name === TERM_REF_NODE_NAME
+              ) {
+                view.dispatch(
+                  view.state.tr.setSelection(
+                    selectionAtEditablePos(view.state.doc, sel.to),
+                  ),
+                )
+              }
+              return false
+            },
             beforeinput(view, event) {
               const sel = view.state.selection
-              if (sel instanceof NodeSelection) return false
+              if (
+                sel instanceof NodeSelection &&
+                sel.node.type.name === TERM_REF_NODE_NAME
+              ) {
+                event.preventDefault()
+                const after = sel.to
+                const tr = view.state.tr.setSelection(
+                  selectionAtEditablePos(view.state.doc, after),
+                )
+                const data = (event as InputEvent).data
+                if (data) tr.insertText(data)
+                view.dispatch(tr)
+                return true
+              }
               if (!(sel instanceof TextSelection) || !sel.empty) return false
               const $pos = sel.$from
               if ($pos.nodeAfter?.type.name === TERM_REF_NODE_NAME) {
@@ -1536,11 +2134,11 @@ export const TermGlossaryHighlight = Extension.create({
         key: pluginKey,
         state: {
           init: (_, state) => {
-            manager.setDoc(state.doc)
+            manager.setDoc(state.doc, false)
             return buildDecorations(state.doc)
           },
           apply: (tr, old, _oldState, newState) => {
-            manager.setDoc(newState.doc)
+            manager.setDoc(newState.doc, tr.docChanged)
             if (tr.docChanged || tr.getMeta(pluginKey)?.refresh) {
               return buildDecorations(newState.doc)
             }
@@ -1562,6 +2160,7 @@ export const TermGlossaryHighlight = Extension.create({
               }
               if (
                 !t?.closest?.(`.${TERM_REF_CANDIDATE_CLASS}`) &&
+                !t?.closest?.(`.${TERM_REF_FORMER_CLASS}`) &&
                 !t?.closest?.(`.${TERM_PICKER_CLASS}`)
               ) {
                 picker.hide()
@@ -1573,6 +2172,44 @@ export const TermGlossaryHighlight = Extension.create({
               if (target?.closest?.('.ext-term-ref-close')) return false
               if (target?.closest?.(`.${TERM_POPOVER_CLASS}`)) return false
               if (target?.closest?.(`.${TERM_PICKER_CLASS}`)) return false
+
+              const formerEl = target?.closest?.(
+                `.${TERM_REF_FORMER_CLASS}`,
+              ) as HTMLElement | null
+              if (formerEl) {
+                event.preventDefault()
+                event.stopPropagation()
+                const formerTitle =
+                  formerEl.getAttribute('data-term-former') || ''
+                const currentTitles = (
+                  formerEl.getAttribute('data-term-current-titles') || ''
+                )
+                  .split('\u0001')
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+                if (!formerTitle || !currentTitles.length) return true
+                const pos = view.posAtDOM(formerEl, 0)
+                const end = view.posAtDOM(formerEl, formerEl.childNodes.length)
+                const from = Math.min(pos, end)
+                const to = Math.max(pos, end)
+                showFormerConfirm(
+                  formerEl,
+                  formerTitle,
+                  currentTitles,
+                  (action, title) => {
+                    void handleFormerAction(
+                      view,
+                      from,
+                      to,
+                      formerTitle,
+                      currentTitles,
+                      action,
+                      title,
+                    )
+                  },
+                )
+                return true
+              }
 
               const candidate = target?.closest?.(
                 `.${TERM_REF_CANDIDATE_CLASS}`,
@@ -1592,7 +2229,7 @@ export const TermGlossaryHighlight = Extension.create({
                 const end = view.posAtDOM(candidate, candidate.childNodes.length)
                 const from = Math.min(pos, end)
                 const to = Math.max(pos, end)
-                picker.show(candidate, candidates, (title) => {
+                showCandidateConfirm(candidate, candidates, (title) => {
                   const tr = view.state.tr
                   if (
                     !replaceRangeWithTermRef(

@@ -230,9 +230,39 @@ export const useGlossaryStore = defineStore('glossary', {
       return terms
     },
 
-    async syncFile(tab: string, file: string, markdown: string) {
-      if (!tab || !file) return
-      const sourcePath = `${tab}/${file}`
+    /**
+     * 从指定词条中移除曾用名；不传 titles 则从全部词条移除。
+     */
+    async removeFormerTitleFrom(
+      former: string,
+      titles?: string[],
+    ): Promise<void> {
+      const f = sanitizeTermTitle(former)
+      if (!f) return
+      const keys = titles?.length
+        ? titles.map((t) => sanitizeTermTitle(t)).filter(Boolean)
+        : Object.keys(this.terms)
+      const keySet = new Set(keys)
+      const terms: Record<string, GlossaryTerm> = { ...this.terms }
+      let changed = false
+      for (const key of keySet) {
+        const prev = terms[key]
+        if (!prev) continue
+        const next = (prev.formerTitles || []).filter((x) => x !== f)
+        if (next.length === (prev.formerTitles || []).length) continue
+        terms[key] = { ...prev, formerTitles: next }
+        changed = true
+      }
+      if (!changed) return
+      await this.persistTerms(terms)
+    },
+
+    async syncFileByPath(sourcePath: string, markdown: string) {
+      const path = String(sourcePath || '')
+        .replace(/\\/g, '/')
+        .replace(/^\/+|\/+$/g, '')
+        .trim()
+      if (!path) return
       const nodes = parseTermMarkdown(markdown || '')
       const fileTerms = nodes
         .map((n) => ({
@@ -244,10 +274,18 @@ export const useGlossaryStore = defineStore('glossary', {
         .filter((t) => t.title)
 
       const data = (await api.patchGlossaryFile({
-        sourcePath,
+        sourcePath: path,
         terms: fileTerms,
       })) as GlossaryFile
       this.applyPayload(data)
+    },
+
+    /** @deprecated 使用 syncFileByPath */
+    async syncFile(tab: string, file: string, markdown: string) {
+      const t = String(tab || '').trim()
+      const f = String(file || '').trim()
+      const sourcePath = t && f ? `${t}/${f}` : f || t
+      await this.syncFileByPath(sourcePath, markdown)
     },
 
     requestOpenSource(sourcePath: string, focusTerm?: string) {

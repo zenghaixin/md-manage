@@ -47,11 +47,15 @@ export interface GlobalMatchRule {
   findMatches(text: string, nodes?: ExtensionNode[]): GlobalMatch[]
 }
 
-/** 文件上下文（存盘 / 打开钩子共用） */
+/** 文件上下文（存盘 / 打开钩子共用；path 为相对 md 根的完整路径） */
 export interface FileContext {
-  tab: string
-  file: string
+  /** 如 `文件夹/a.md` 或根级 `a.md` */
+  path: string
   markdown: string
+  /** @deprecated 由 path 派生，兼容旧扩展 */
+  tab?: string
+  /** @deprecated 由 path 派生，兼容旧扩展 */
+  file?: string
 }
 
 /**

@@ -13,11 +13,17 @@ export const TERM_HEADER_CLASS = 'ext-term-header'
 
 /** 已确认引用高亮 */
 export const TERM_REF_CLASS = 'ext-term-ref'
-/** 未确认候选（灰虚线） */
-export const TERM_REF_CANDIDATE_CLASS = 'ext-term-ref-candidate'
-/** 无效 term[标题]（红虚线） */
-export const TERM_REF_INVALID_CLASS = 'ext-term-ref-invalid'
+
+import { TERM_DASH_KIND_CLASS } from './dash'
+
+/** 未确认候选虚线变体（完整 class 用 termDashClass('candidate')） */
+export const TERM_REF_CANDIDATE_CLASS = TERM_DASH_KIND_CLASS.candidate
+/** 曾用名虚线变体 */
+export const TERM_REF_FORMER_CLASS = TERM_DASH_KIND_CLASS.former
+/** 无效引用虚线变体 */
+export const TERM_REF_INVALID_CLASS = TERM_DASH_KIND_CLASS.invalid
+
 /** 点击词条引用后的描述对话框 */
 export const TERM_POPOVER_CLASS = 'ext-term-popover'
-/** 候选选择 / 不是词条 浮层 */
+/** 候选选择 / 不是词条 / 曾用名 浮层 */
 export const TERM_PICKER_CLASS = 'ext-term-picker'

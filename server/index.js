@@ -3,6 +3,7 @@ import cors from 'cors'
 import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { createFsTree } from './fsTree.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DOCS_ROOT = path.resolve(__dirname, '../md')
@@ -41,6 +42,128 @@ async function ensureDocsRoot() {
   await fs.mkdir(DOCS_ROOT, { recursive: true })
 }
 
+const fsTree = createFsTree(DOCS_ROOT, isSafeName, {
+  readGlossary: () => readGlossaryFile(),
+  writeGlossary: (data) => writeGlossaryFile(data),
+})
+
+function sendErr(res, err) {
+  const status = err.status || (err.code === 'ENOENT' ? 404 : 500)
+  res.status(status).json({ error: err.message || String(err) })
+}
+
+/** 文档树 */
+app.get('/api/tree', async (_req, res) => {
+  try {
+    const data = await fsTree.buildTree()
+    res.json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+app.post('/api/tree/folders', async (req, res) => {
+  try {
+    const parentPath = String(req.body?.parentPath ?? '')
+    const name = String(req.body?.name ?? '').trim()
+    const data = await fsTree.createFolder(parentPath, name)
+    res.status(201).json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+app.patch('/api/tree/folders', async (req, res) => {
+  try {
+    const pathRel = String(req.body?.path ?? '')
+    const name = String(req.body?.name ?? '').trim()
+    const data = await fsTree.renameEntry(pathRel, name)
+    res.json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+app.delete('/api/tree/folders', async (req, res) => {
+  try {
+    const pathRel = String(req.body?.path ?? req.query?.path ?? '')
+    const data = await fsTree.deleteEntry(pathRel)
+    res.json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+app.post('/api/tree/files', async (req, res) => {
+  try {
+    const parentPath = String(req.body?.parentPath ?? '')
+    const name = String(req.body?.name ?? '').trim()
+    const data = await fsTree.createFile(parentPath, name)
+    res.status(201).json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+app.get('/api/tree/file', async (req, res) => {
+  try {
+    const pathRel = String(req.query?.path ?? '')
+    const data = await fsTree.readFileContent(pathRel)
+    res.json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+app.put('/api/tree/file', async (req, res) => {
+  try {
+    const pathRel = String(req.body?.path ?? req.query?.path ?? '')
+    const { content } = req.body || {}
+    if (typeof content !== 'string') {
+      return res.status(400).json({ error: '内容格式错误' })
+    }
+    const data = await fsTree.writeFileContent(pathRel, content)
+    res.json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+app.patch('/api/tree/file', async (req, res) => {
+  try {
+    const pathRel = String(req.body?.path ?? '')
+    const name = String(req.body?.name ?? '').trim()
+    const data = await fsTree.renameEntry(pathRel, name)
+    res.json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+app.delete('/api/tree/file', async (req, res) => {
+  try {
+    const pathRel = String(req.body?.path ?? req.query?.path ?? '')
+    const data = await fsTree.deleteEntry(pathRel)
+    res.json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+/** 移动文件/文件夹（整棵子树） */
+app.post('/api/tree/move', async (req, res) => {
+  try {
+    const fromPath = String(req.body?.fromPath ?? '')
+    const toParentPath = String(req.body?.toParentPath ?? '')
+    const toIndex =
+      req.body?.toIndex == null ? -1 : Number(req.body.toIndex)
+    const data = await fsTree.moveEntry(fromPath, toParentPath, toIndex)
+    res.json(data)
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
 async function readTabOrder() {
   try {
     const raw = await fs.readFile(META_FILE, 'utf-8')
@@ -57,21 +180,8 @@ async function writeTabOrder(order) {
 
 async function listTabs() {
   await ensureDocsRoot()
-  const entries = await fs.readdir(DOCS_ROOT, { withFileTypes: true })
-  const folders = entries
-    .filter((e) => e.isDirectory() && isSafeName(e.name))
-    .map((e) => e.name)
-
-  const prevOrder = await readTabOrder()
-  let order = prevOrder.filter((name) => folders.includes(name))
-  for (const name of folders) {
-    if (!order.includes(name)) order.push(name)
-  }
-  // 仅在顺序变化时写入，避免每次 GET 都触发 Vite 整页刷新
-  if (JSON.stringify(order) !== JSON.stringify(prevOrder)) {
-    await writeTabOrder(order)
-  }
-  return order
+  const { tree } = await fsTree.buildTree()
+  return tree.filter((n) => n.type === 'folder').map((n) => n.name)
 }
 
 function tabDir(tab) {
@@ -128,6 +238,70 @@ app.delete('/api/tabs/:tab', async (req, res) => {
     const order = (await readTabOrder()).filter((n) => n !== tab)
     await writeTabOrder(order)
     res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/** 重命名文件夹（tab） */
+app.patch('/api/tabs/:tab', async (req, res) => {
+  try {
+    const { tab } = req.params
+    let { name } = req.body || {}
+    if (!isSafeName(tab)) {
+      return res.status(400).json({ error: '原文件夹名称不合法' })
+    }
+    name = String(name ?? '').trim()
+    if (!isSafeName(name)) {
+      return res.status(400).json({ error: '新文件夹名称不合法' })
+    }
+    if (name === tab) {
+      return res.json({ name: tab })
+    }
+
+    const from = tabDir(tab)
+    const to = tabDir(name)
+    try {
+      await fs.access(from)
+    } catch {
+      return res.status(404).json({ error: '文件夹不存在' })
+    }
+    try {
+      await fs.access(to)
+      return res.status(409).json({ error: '目标文件夹已存在' })
+    } catch {
+      // ok
+    }
+
+    await fs.rename(from, to)
+
+    const order = await readTabOrder()
+    const nextOrder = order.map((n) => (n === tab ? name : n))
+    if (!nextOrder.includes(name)) nextOrder.push(name)
+    await writeTabOrder(nextOrder)
+
+    // 同步 glossary 里该文件夹下的 sourcePath
+    try {
+      const data = await readGlossaryFile()
+      const prefix = `${tab}/`
+      let changed = false
+      const terms = { ...data.terms }
+      for (const [key, term] of Object.entries(terms)) {
+        const sp = String(term?.sourcePath || '')
+        if (!sp.startsWith(prefix) && sp !== tab) continue
+        const rest = sp.startsWith(prefix) ? sp.slice(prefix.length) : ''
+        terms[key] = {
+          ...term,
+          sourcePath: rest ? `${name}/${rest}` : name,
+        }
+        changed = true
+      }
+      if (changed) await writeGlossaryFile({ terms })
+    } catch {
+      // glossary 更新失败不阻断改名
+    }
+
+    res.json({ name })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -395,48 +569,33 @@ async function writeGlossaryFile(data) {
  * 保留已有 ignoreContexts / formerTitles。
  */
 async function scanMarkdownTerms(existingTerms = {}) {
-  const tabs = await listTabs()
   /** @type {Record<string, object>} */
   const terms = {}
+  const paths = await fsTree.listAllMarkdownPaths()
 
-  for (const tab of tabs) {
-    const dir = tabDir(tab)
-    let entries
+  for (const sourcePath of paths) {
+    let content
     try {
-      entries = await fs.readdir(dir, { withFileTypes: true })
+      content = await fs.readFile(fsTree.absOf(sourcePath), 'utf-8')
     } catch {
       continue
     }
 
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-      const base = entry.name.replace(/\.md$/, '')
-      if (!isSafeName(base)) continue
-
-      let content
-      try {
-        content = await fs.readFile(filePath(tab, entry.name), 'utf-8')
-      } catch {
-        continue
-      }
-
-      const sourcePath = `${tab}/${entry.name}`
-      TERM_BLOCK_RE.lastIndex = 0
-      let match
-      while ((match = TERM_BLOCK_RE.exec(content)) !== null) {
-        const title = match[1].trim()
-        if (!title) continue
-        const prev = existingTerms[title]
-        terms[title] = {
-          title,
-          description: match[2].replace(/\r\n/g, '\n').trim(),
-          sourcePath,
-          ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
-          formerTitles: normalizeFormerTitles(prev?.formerTitles),
-          pendingManualConfirm: normalizePendingManualConfirm(
-            prev?.pendingManualConfirm,
-          ),
-        }
+    TERM_BLOCK_RE.lastIndex = 0
+    let match
+    while ((match = TERM_BLOCK_RE.exec(content)) !== null) {
+      const title = match[1].trim()
+      if (!title) continue
+      const prev = existingTerms[title]
+      terms[title] = {
+        title,
+        description: match[2].replace(/\r\n/g, '\n').trim(),
+        sourcePath,
+        ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
+        formerTitles: normalizeFormerTitles(prev?.formerTitles),
+        pendingManualConfirm: normalizePendingManualConfirm(
+          prev?.pendingManualConfirm,
+        ),
       }
     }
   }
@@ -538,7 +697,7 @@ app.patch('/api/glossary/file', async (req, res) => {
       .filter(Boolean)
     const removedTitles = Object.keys(preserved).filter((t) => !newTitles.includes(t))
     const addedTitles = newTitles.filter((t) => !preserved[t])
-    /** 同一文件内一对一改名：把旧名并入新名的 formerTitles */
+    /** 同一文件内一对一改名：迁移旧条目的 ignore / former / pending，但不自动把中间名写入 formerTitles（正式曾用名由 commitTermRename 写入） */
     const renameMap = new Map()
     if (removedTitles.length === 1 && addedTitles.length === 1) {
       renameMap.set(addedTitles[0], removedTitles[0])
@@ -557,7 +716,6 @@ app.patch('/api/glossary/file', async (req, res) => {
           ? normalizeFormerTitles(fromData.formerTitles)
           : []),
         ...(fromOld?.formerTitles || []),
-        ...(renamedFrom ? [renamedFrom] : []),
       ]).filter((f) => f !== title)
       nextTerms[title] = {
         title,
@@ -660,8 +818,6 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
       new Set([oldTitle, ...alsoReplace].filter((t) => t && t !== newTitle)),
     )
 
-    const tabs = await listTabs()
-    /** @type {Array<{ id: string, sourcePath: string, kind: string, context: string, hit: string, from: number, to: number }>} */
     const conflicts = []
     let refUpdatedFiles = 0
 
@@ -670,26 +826,15 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
       glossary.terms?.[newTitle]?.ignoreContexts,
     )
 
-    for (const tab of tabs) {
-      const dir = tabDir(tab)
-      let entries
-      try {
-        entries = await fs.readdir(dir, { withFileTypes: true })
-      } catch {
-        continue
-      }
-      for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith('.md')) continue
-        const base = entry.name.replace(/\.md$/, '')
-        if (!isSafeName(base)) continue
-        const fp = filePath(tab, entry.name)
+    const mdPaths = await fsTree.listAllMarkdownPaths()
+    for (const sourcePath of mdPaths) {
+        const fp = fsTree.absOf(sourcePath)
         let content
         try {
           content = await fs.readFile(fp, 'utf-8')
         } catch {
           continue
         }
-        const sourcePath = `${tab}/${entry.name}`
         let next = content
         if (oldTitle !== newTitle) {
           let replaced = content
@@ -737,7 +882,6 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
           // 再扫曾用名会把同一批内容再次推进抽屉（例如 能量→气 又弹出能量）。
           pushHits(newTitle, 'new-title')
         }
-      }
     }
 
     console.log(
@@ -812,11 +956,7 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
     }
 
     for (const [sourcePath, ops] of byFile) {
-      const slash = sourcePath.indexOf('/')
-      if (slash <= 0) continue
-      const tab = sourcePath.slice(0, slash)
-      const file = sourcePath.slice(slash + 1)
-      const fp = filePath(tab, file)
+      const fp = fsTree.absOf(sourcePath)
       let content = await fs.readFile(fp, 'utf-8')
       const sorted = [...ops].sort((a, b) => b.from - a.from)
       for (const op of sorted) {
