@@ -10,7 +10,7 @@ import router from './router'
 import { initTheme } from './composables/useTheme'
 import { runAppStartHooks } from './editor/extensions'
 
-initTheme()
+void initTheme()
 
 const app = createApp(App)
 const pinia = createPinia()

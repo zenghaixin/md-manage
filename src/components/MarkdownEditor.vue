@@ -249,7 +249,7 @@ defineExpose({ saveFile })
 </script>
 
 <template>
-  <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
+  <section class="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-bg">
     <div v-if="!hasFile" class="m-auto max-w-md px-5 py-8 text-center">
       <h2 class="mb-3 font-display text-lg font-semibold text-ink sm:text-xl">
         选择或新建一个 Markdown 文件

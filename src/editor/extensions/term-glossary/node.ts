@@ -4,6 +4,7 @@ import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import { TERM_GLOSSARY_ID, TERM_NODE_NAME } from './constants'
 import { ensureTermGlossaryStyles } from './styles'
+import { requestTermTitleAutofocus, consumeTermTitleAutofocus } from './titleAutofocus'
 import TermNodeView from './TermNodeView.vue'
 
 declare module '@tiptap/core' {
@@ -80,12 +81,24 @@ export const TermGlossaryNode = Node.create({
         return !!t?.closest?.('.ext-term-title')
       },
       ignoreMutation: ({ mutation }) => {
+        if (mutation.type === 'selection') return false
         const t = mutation.target as Node | null
         const el =
           t && t.nodeType === Node.TEXT_NODE
             ? t.parentElement
             : (t as HTMLElement | null)
-        return !!el?.closest?.('.ext-term-title')
+        // 标题 input 在 contentDOM 外，其变更必须忽略
+        if (el?.closest?.('.ext-term-title')) return true
+        // 描述 contentDOM 内的变更交给 ProseMirror
+        if (
+          el?.closest?.(
+            '.ext-term-desc, [data-node-view-content], [data-node-view-content-vue]',
+          )
+        ) {
+          return false
+        }
+        // wrapper chrome（is-incomplete / selected / data-*）必须忽略，否则会重绘抢光标
+        return true
       },
     })
   },
@@ -160,6 +173,7 @@ export const TermGlossaryNode = Node.create({
       insertTermGlossary:
         () =>
         ({ editor, chain }) => {
+          requestTermTitleAutofocus()
           const ok = chain()
             .focus()
             .insertContent({
@@ -168,28 +182,39 @@ export const TermGlossaryNode = Node.create({
               content: [{ type: 'paragraph' }],
             })
             .run()
-          if (!ok) return false
+          if (!ok) {
+            consumeTermTitleAutofocus()
+            return false
+          }
 
-          // 插入后选区在描述段，下一帧把焦点挪到标题输入框
+          // 兜底：NodeView mount 未消费时，再尝试聚焦标题
           const nodeName = this.name
-          requestAnimationFrame(() => {
+          const tryFocus = (attempt: number) => {
             try {
               if (editor.isDestroyed) return
               const { $from } = editor.state.selection
               const depth = findTermDepth($from, nodeName)
-              if (depth < 0) return
+              if (depth < 0) {
+                if (attempt < 4) requestAnimationFrame(() => tryFocus(attempt + 1))
+                return
+              }
               const termPos = $from.before(depth)
               const dom = editor.view.nodeDOM(termPos) as HTMLElement | null
               const input = dom?.querySelector?.(
                 '.ext-term-title',
               ) as HTMLInputElement | null
-              if (!input) return
+              if (!input) {
+                if (attempt < 4) requestAnimationFrame(() => tryFocus(attempt + 1))
+                return
+              }
+              if (document.activeElement === input) return
               input.focus()
               input.select()
             } catch {
               // ignore
             }
-          })
+          }
+          requestAnimationFrame(() => tryFocus(0))
           return true
         },
     }

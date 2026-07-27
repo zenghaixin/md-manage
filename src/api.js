@@ -149,9 +149,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  glossaryHasConfirmedRef: (title) =>
+    request(
+      `/api/glossary/has-confirmed-ref?title=${encodeURIComponent(String(title || ''))}`,
+    ),
   applyGlossaryConflicts: (body) =>
     request('/api/glossary/apply-conflicts', {
       method: 'POST',
       body: JSON.stringify(body),
+    }),
+
+  getAppConfig: () => request('/api/app-config'),
+  patchAppConfig: (body) =>
+    request('/api/app-config', {
+      method: 'PATCH',
+      body: JSON.stringify(body || {}),
     }),
 }

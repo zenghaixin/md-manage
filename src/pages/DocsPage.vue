@@ -1,16 +1,39 @@
 <script setup>
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, ref, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import FileSidebar from '../components/FileSidebar.vue'
 import MarkdownEditor from '../components/MarkdownEditor.vue'
+import OpsSidePanel from '../components/OpsSidePanel.vue'
+import PaneSplitter from '../components/PaneSplitter.vue'
 import { api } from '../api'
 import { useToast } from '../composables/useToast'
 import { useMediaQuery } from '../composables/useMediaQuery'
-import { onOpenFileRequest } from '../editor/shellEvents'
+import {
+  onOpenFileRequest,
+  onOpenRightPanelRequest,
+  onCloseRightPanelRequest,
+  notifyRightPanelDismiss,
+  notifyRightPanelOpened,
+  getRightPanelHost,
+} from '../editor/shellEvents'
+import {
+  getRightPanelModule,
+  listVisibleRightPanelModules,
+  onRightPanelModulesChanged,
+  resolveActiveRightPanelModuleId,
+} from '../editor/rightPanelRegistry'
+import { appConfig, patchAppConfig } from '../composables/useAppConfig'
 import { useGlossaryStore } from '../stores/glossary'
 
 const { showToast } = useToast()
 const isMobile = useMediaQuery('(max-width: 767px)')
+
+const LEFT_MIN = 160
+const LEFT_DEFAULT = 256
+const RIGHT_MIN = 240
+const RIGHT_DEFAULT = 320
+const EDITOR_MIN = 320
+const SPLITTER_W = 1
 
 /** 路径变更后重扫词库，保证弹窗「跟踪文件」的 sourcePath 与磁盘一致 */
 async function refreshGlossaryPaths() {
@@ -29,9 +52,100 @@ const busy = ref(false)
 const sidebarVisible = ref(true)
 const sidebarOpen = ref(false)
 
+const leftWidth = ref(LEFT_DEFAULT)
+const rightWidth = ref(RIGHT_DEFAULT)
+const rightOpen = ref(false)
+const activeModuleId = ref('')
+const bookmarkTick = ref(0)
+const layoutEl = ref(null)
+const opsPanelRef = ref(null)
+
+/** 当前已挂载的模块 id（用于切换时 unmount） */
+let mountedModuleId = ''
+
+/** 拖拽缓存 */
+let dragLeftStart = 0
+let dragRightStart = 0
+
 const sidebarShown = computed(() =>
   isMobile.value ? sidebarOpen.value : sidebarVisible.value,
 )
+
+const visibleBookmarks = computed(() => {
+  bookmarkTick.value
+  return listVisibleRightPanelModules().map((m) => ({
+    id: m.id,
+    label: m.label,
+  }))
+})
+
+const showLeftPane = computed(() => !isMobile.value && sidebarVisible.value)
+const showLeftSplitter = computed(() => showLeftPane.value)
+const showRightSplitter = computed(() => !isMobile.value && rightOpen.value)
+
+function refreshBookmarks() {
+  bookmarkTick.value += 1
+}
+
+function resolveModuleId(preferId) {
+  const saved = preferId ?? appConfig.value.rightPanelActiveModuleId
+  return resolveActiveRightPanelModuleId(saved)
+}
+
+async function mountActiveModule() {
+  const id = activeModuleId.value
+  const host =
+    (await opsPanelRef.value?.waitHost?.()) ||
+    opsPanelRef.value?.getHost?.() ||
+    getRightPanelHost()
+  if (!host) return
+
+  if (mountedModuleId) {
+    try {
+      getRightPanelModule(mountedModuleId)?.unmount?.()
+    } catch (err) {
+      console.warn('[docs] unmount module failed:', err)
+    }
+    mountedModuleId = ''
+  }
+
+  host.replaceChildren()
+  if (!id) return
+
+  const mod = getRightPanelModule(id)
+  if (!mod || !mod.isVisible()) {
+    const fallback = resolveModuleId('')
+    activeModuleId.value = fallback
+    if (!fallback || fallback === id) return
+    return mountActiveModule()
+  }
+
+  try {
+    mod.mount(host)
+    mountedModuleId = id
+  } catch (err) {
+    console.warn('[docs] mount module failed:', err)
+  }
+}
+
+function unmountActiveModule() {
+  if (!mountedModuleId) return
+  try {
+    getRightPanelModule(mountedModuleId)?.unmount?.()
+  } catch (err) {
+    console.warn('[docs] unmount module failed:', err)
+  }
+  mountedModuleId = ''
+}
+
+async function activateModule(moduleId, { persist = true } = {}) {
+  const next = resolveModuleId(moduleId)
+  activeModuleId.value = next
+  if (persist) {
+    void patchAppConfig({ rightPanelActiveModuleId: next })
+  }
+  if (rightOpen.value) await mountActiveModule()
+}
 
 function toggleSidebar() {
   if (isMobile.value) {
@@ -39,6 +153,71 @@ function toggleSidebar() {
   } else {
     sidebarVisible.value = !sidebarVisible.value
   }
+}
+
+async function toggleRightPanel() {
+  if (rightOpen.value) {
+    closeRightPanelByShell()
+  } else {
+    rightOpen.value = true
+    activeModuleId.value = resolveModuleId(activeModuleId.value)
+    await mountActiveModule()
+    notifyRightPanelOpened()
+  }
+}
+
+function closeRightPanelByShell() {
+  if (!rightOpen.value) return
+  notifyRightPanelDismiss()
+  unmountActiveModule()
+  rightOpen.value = false
+}
+
+function closeRightPanelSilent() {
+  unmountActiveModule()
+  rightOpen.value = false
+}
+
+function onSelectModule(id) {
+  if (!id || id === activeModuleId.value) return
+  void activateModule(id)
+}
+
+function layoutBudget() {
+  const total = layoutEl.value?.clientWidth || window.innerWidth
+  const left = showLeftPane.value ? leftWidth.value + SPLITTER_W : 0
+  const right = rightOpen.value ? rightWidth.value + SPLITTER_W : 0
+  return { total, left, right, editor: total - left - right }
+}
+
+function clampLeft(next) {
+  const { total } = layoutBudget()
+  const right = rightOpen.value ? rightWidth.value + SPLITTER_W : 0
+  const max = Math.max(LEFT_MIN, total - EDITOR_MIN - right - SPLITTER_W)
+  return Math.min(Math.max(next, LEFT_MIN), max)
+}
+
+function clampRight(next) {
+  const { total } = layoutBudget()
+  const left = showLeftPane.value ? leftWidth.value + SPLITTER_W : 0
+  const max = Math.max(RIGHT_MIN, total - EDITOR_MIN - left - SPLITTER_W)
+  return Math.min(Math.max(next, RIGHT_MIN), max)
+}
+
+function onLeftDragStart() {
+  dragLeftStart = leftWidth.value
+}
+
+function onLeftDrag({ deltaX }) {
+  leftWidth.value = clampLeft(dragLeftStart + deltaX)
+}
+
+function onRightDragStart() {
+  dragRightStart = rightWidth.value
+}
+
+function onRightDrag({ deltaX }) {
+  rightWidth.value = clampRight(dragRightStart - deltaX)
 }
 
 function collectFilePaths(nodes, out = []) {
@@ -239,14 +418,39 @@ function onSelectFile({ path }) {
 }
 
 let stopOpenFile = null
+let stopOpenRight = null
+let stopCloseRight = null
+let stopModules = null
 
 watch(isMobile, (mobile) => {
   if (!mobile) sidebarOpen.value = false
 })
 
 onMounted(async () => {
+  activeModuleId.value = resolveModuleId(appConfig.value.rightPanelActiveModuleId)
+
+  stopModules = onRightPanelModulesChanged(() => {
+    refreshBookmarks()
+    if (!rightOpen.value) return
+    const next = resolveModuleId(activeModuleId.value)
+    if (next !== activeModuleId.value || next !== mountedModuleId) {
+      void activateModule(next, { persist: next !== appConfig.value.rightPanelActiveModuleId })
+    }
+  })
+
   stopOpenFile = onOpenFileRequest(({ path }) => {
     onSelectFile({ path })
+  })
+  stopOpenRight = onOpenRightPanelRequest(async ({ moduleId, onReady }) => {
+    rightOpen.value = true
+    await activateModule(moduleId || activeModuleId.value)
+    await nextTick()
+    const host =
+      opsPanelRef.value?.getHost?.() || getRightPanelHost()
+    if (host && onReady) onReady(host)
+  })
+  stopCloseRight = onCloseRightPanelRequest(() => {
+    closeRightPanelSilent()
   })
   try {
     await refreshTree()
@@ -258,31 +462,68 @@ onMounted(async () => {
 onUnmounted(() => {
   stopOpenFile?.()
   stopOpenFile = null
+  stopOpenRight?.()
+  stopOpenRight = null
+  stopCloseRight?.()
+  stopCloseRight = null
+  stopModules?.()
+  stopModules = null
+  unmountActiveModule()
 })
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col" :class="{ 'cursor-progress': busy }">
-    <div class="flex min-h-0 flex-1">
-      <FileSidebar
-        v-if="!isMobile && sidebarVisible"
-        :tree="tree"
-        :active-path="activePath"
-        @select="onSelectFile"
-        @add-root-folder="onAddRootFolder"
-        @add-folder="onAddFolder"
-        @remove-folder="onRemoveFolder"
-        @rename-folder="onRenameFolder"
-        @add-file="onAddFile"
-        @remove-file="onRemoveFile"
-        @rename-file="onRenameFile"
-        @move="onMove"
+    <div ref="layoutEl" class="flex min-h-0 flex-1">
+      <div
+        v-if="showLeftPane"
+        class="flex min-h-0 shrink-0 flex-col overflow-hidden"
+        :style="{ width: `${leftWidth}px` }"
+      >
+        <FileSidebar
+          class="h-full !w-full !border-r-0"
+          :tree="tree"
+          :active-path="activePath"
+          @select="onSelectFile"
+          @add-root-folder="onAddRootFolder"
+          @add-folder="onAddFolder"
+          @remove-folder="onRemoveFolder"
+          @rename-folder="onRenameFolder"
+          @add-file="onAddFile"
+          @remove-file="onRemoveFile"
+          @rename-file="onRenameFile"
+          @move="onMove"
+        />
+      </div>
+
+      <PaneSplitter
+        v-if="showLeftSplitter"
+        @dragstart="onLeftDragStart"
+        @drag="onLeftDrag"
       />
 
       <MarkdownEditor
+        class="min-w-0 flex-1"
         :path="activePath"
         :sidebar-open="sidebarShown"
         @toggle-sidebar="toggleSidebar"
+      />
+
+      <PaneSplitter
+        v-if="showRightSplitter"
+        @dragstart="onRightDragStart"
+        @drag="onRightDrag"
+      />
+
+      <OpsSidePanel
+        v-if="!isMobile"
+        ref="opsPanelRef"
+        :open="rightOpen"
+        :width="rightWidth"
+        :bookmarks="visibleBookmarks"
+        :active-module-id="activeModuleId"
+        @toggle="toggleRightPanel"
+        @select-module="onSelectModule"
       />
     </div>
 

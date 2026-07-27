@@ -1,17 +1,7 @@
 import { computed, ref, watch } from 'vue'
+import { appConfig, loadAppConfig, patchAppConfig } from './useAppConfig'
 
-const STORAGE_KEY = 'docs-theme'
 const MODES = ['system', 'light', 'dark']
-
-function readStoredPreference() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (MODES.includes(saved)) return saved
-  } catch {
-    // ignore storage errors
-  }
-  return 'system'
-}
 
 function getSystemDark() {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -29,7 +19,14 @@ function applyTheme(resolved) {
   root.classList.toggle('dark', resolved === 'dark')
 }
 
-const preference = ref(readStoredPreference())
+const preference = computed({
+  get: () => appConfig.value.theme,
+  set: (mode) => {
+    if (!MODES.includes(mode)) return
+    void patchAppConfig({ theme: mode })
+  },
+})
+
 const systemDark = ref(typeof window !== 'undefined' ? getSystemDark() : false)
 
 let mediaBound = false
@@ -44,24 +41,15 @@ function bindSystemListener() {
   })
 }
 
-const resolvedTheme = computed(() => resolveTheme(preference.value, systemDark.value))
-
-watch(
-  resolvedTheme,
-  (theme) => applyTheme(theme),
-  { immediate: true },
+const resolvedTheme = computed(() =>
+  resolveTheme(preference.value, systemDark.value),
 )
 
-watch(preference, (pref) => {
-  try {
-    localStorage.setItem(STORAGE_KEY, pref)
-  } catch {
-    // ignore storage errors
-  }
-})
+watch(resolvedTheme, (theme) => applyTheme(theme), { immediate: true })
 
-export function initTheme() {
+export async function initTheme() {
   bindSystemListener()
+  await loadAppConfig()
   applyTheme(resolvedTheme.value)
 }
 
@@ -70,7 +58,7 @@ export function useTheme() {
 
   function setTheme(mode) {
     if (!MODES.includes(mode)) return
-    preference.value = mode
+    void patchAppConfig({ theme: mode })
   }
 
   return {

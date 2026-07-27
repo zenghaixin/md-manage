@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { NodeViewContent, NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
 import { confirmChoice } from '../../../composables/useDialog'
@@ -8,6 +8,7 @@ import { FLASH_MS, registerTermFlashHandle } from './flashTerm'
 import { suppressAutoConfirmForTitle } from './match'
 import { commitTermRename } from './renameFlow'
 import { sanitizeTermTitle } from './syntax'
+import { consumeTermTitleAutofocus } from './titleAutofocus'
 
 const props = defineProps(nodeViewProps)
 
@@ -378,6 +379,15 @@ function triggerFlash() {
 
 onMounted(() => {
   syncTitleDom(localTitle.value)
+  if (consumeTermTitleAutofocus()) {
+    editingTitle.value = true
+    nextTick(() => {
+      const el = titleEl.value
+      if (!el) return
+      el.focus()
+      el.select()
+    })
+  }
   stopFlashRegister = registerTermFlashHandle({
     getTitle: () => String(props.node.attrs.title ?? localTitle.value ?? ''),
     flash: triggerFlash,

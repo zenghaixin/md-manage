@@ -16,10 +16,11 @@ import {
   clearAutoConfirmSuppress,
   suppressAutoConfirmForTitle,
 } from './match'
-import { rewriteOpenEditorTermRefs } from './renameRefs'
+import { rewriteOpenEditorTermRefs, openEditorHasInlineTermRef } from './renameRefs'
 import { sanitizeTermTitle } from './syntax'
 import { runRenameSyncAndOpenDrawer } from './conflictDrawer'
 import { getActiveTermEditorView } from './editorViewRef'
+import { api } from '../../../api'
 
 export interface CommitTermRenameOptions {
   oldTitle: string
@@ -50,6 +51,20 @@ export async function commitTermRename(
       : prev?.description || ''
   const sourcePath = options.sourcePath ?? prev?.sourcePath ?? ''
   const formerBefore = [...(prev?.formerTitles || [])]
+  const editorView = options.editor?.view ?? getActiveTermEditorView()
+
+  // 必须在写入词表 / 改引用 / 存盘之前判定：正文是否已有行内 term[旧名]
+  let recordAsFormer = openEditorHasInlineTermRef(editorView, oldTitle)
+  if (!recordAsFormer) {
+    try {
+      const hit = (await api.glossaryHasConfirmedRef(oldTitle)) as {
+        has?: boolean
+      }
+      recordAsFormer = !!hit?.has
+    } catch {
+      recordAsFormer = false
+    }
+  }
 
   // 必须在写入词表 / 存盘 / 重载之前禁止自动确认
   suppressAutoConfirmForTitle(newTitle)
@@ -59,6 +74,7 @@ export async function commitTermRename(
     newTitle,
     description,
     sourcePath,
+    recordAsFormer,
   )
   if (prepared) await store.persistTerms(prepared)
 
@@ -66,11 +82,7 @@ export async function commitTermRename(
   const titlesToRewrite = Array.from(
     new Set([oldTitle, ...formerBefore].map((t) => sanitizeTermTitle(t)).filter(Boolean)),
   )
-  rewriteOpenEditorTermRefs(
-    options.editor?.view ?? getActiveTermEditorView(),
-    titlesToRewrite,
-    newTitle,
-  )
+  rewriteOpenEditorTermRefs(editorView, titlesToRewrite, newTitle)
 
   if (options.saveCurrent !== false) {
     await requestSaveCurrentFile()
@@ -79,6 +91,7 @@ export async function commitTermRename(
   try {
     await runRenameSyncAndOpenDrawer(oldTitle, newTitle, {
       alsoReplace: titlesToRewrite,
+      recordAsFormer,
     })
   } catch (err) {
     clearAutoConfirmSuppress(newTitle)

@@ -135,6 +135,8 @@ const termGlossaryExtension: MarkdownExtension = {
   async onAppStart() {
     const { useGlossaryStore } = await import('../../../stores/glossary')
     await useGlossaryStore().bootstrap()
+    const { bindPendingConflictRestore } = await import('./conflictDrawer')
+    bindPendingConflictRestore()
   },
 
   /** 存盘后：按当前文件同步词条到全局表 */

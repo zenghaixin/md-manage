@@ -6,11 +6,24 @@
 
 export type OpenFilePayload = { path: string }
 
+export type OpenRightPanelPayload = {
+  /** 指定激活的模块 id；空则按配置/默认解析 */
+  moduleId?: string
+  /** @deprecated 标题改由模块书签表达 */
+  title?: string
+  onReady?: (host: HTMLElement) => void
+}
+
 type Handler<T> = (payload: T) => void
 
 const openFileHandlers = new Set<Handler<OpenFilePayload>>()
 const reloadFileHandlers = new Set<Handler<OpenFilePayload>>()
 const saveCurrentHandlers = new Set<() => void | Promise<void>>()
+const openRightPanelHandlers = new Set<Handler<OpenRightPanelPayload>>()
+const closeRightPanelHandlers = new Set<() => void>()
+const rightPanelDismissHandlers = new Set<() => void>()
+
+let rightPanelHost: HTMLElement | null = null
 
 function normPath(sourcePath: string): string {
   return String(sourcePath || '')
@@ -92,5 +105,93 @@ export function onSaveCurrentFileRequest(
   saveCurrentHandlers.add(handler)
   return () => {
     saveCurrentHandlers.delete(handler)
+  }
+}
+
+/** DocsPage 注册右侧操作区 host */
+export function setRightPanelHost(el: HTMLElement | null): void {
+  rightPanelHost = el
+}
+
+export function getRightPanelHost(): HTMLElement | null {
+  return rightPanelHost
+}
+
+/** 扩展请求打开右侧面板（可选指定模块） */
+export function requestOpenRightPanel(payload: OpenRightPanelPayload = {}): void {
+  for (const handler of openRightPanelHandlers) {
+    try {
+      handler(payload)
+    } catch (err) {
+      console.warn('[shellEvents] open-right-panel handler failed:', err)
+    }
+  }
+}
+
+/** 扩展或内容区请求关闭右侧操作区 */
+export function requestCloseRightPanel(): void {
+  for (const handler of closeRightPanelHandlers) {
+    try {
+      handler()
+    } catch (err) {
+      console.warn('[shellEvents] close-right-panel handler failed:', err)
+    }
+  }
+}
+
+export function onOpenRightPanelRequest(
+  handler: Handler<OpenRightPanelPayload>,
+): () => void {
+  openRightPanelHandlers.add(handler)
+  return () => {
+    openRightPanelHandlers.delete(handler)
+  }
+}
+
+export function onCloseRightPanelRequest(handler: () => void): () => void {
+  closeRightPanelHandlers.add(handler)
+  return () => {
+    closeRightPanelHandlers.delete(handler)
+  }
+}
+
+/**
+ * 用户通过壳层开关收起右栏时通知扩展做清理。
+ * 扩展主动 requestCloseRightPanel 时不要再调 notify，避免重复。
+ */
+export function onRightPanelDismiss(handler: () => void): () => void {
+  rightPanelDismissHandlers.add(handler)
+  return () => {
+    rightPanelDismissHandlers.delete(handler)
+  }
+}
+
+export function notifyRightPanelDismiss(): void {
+  for (const handler of Array.from(rightPanelDismissHandlers)) {
+    try {
+      handler()
+    } catch (err) {
+      console.warn('[shellEvents] right-panel dismiss handler failed:', err)
+    }
+  }
+}
+
+const rightPanelOpenedHandlers = new Set<() => void>()
+
+/** 右栏变为展开时（含用户点凸耳），扩展可恢复待处理内容 */
+export function onRightPanelOpened(handler: () => void): () => void {
+  rightPanelOpenedHandlers.add(handler)
+  return () => {
+    rightPanelOpenedHandlers.delete(handler)
+  }
+}
+
+export function notifyRightPanelOpened(): void {
+  for (const handler of Array.from(rightPanelOpenedHandlers)) {
+    try {
+      handler()
+    } catch (err) {
+      console.warn('[shellEvents] right-panel opened handler failed:', err)
+    }
   }
 }

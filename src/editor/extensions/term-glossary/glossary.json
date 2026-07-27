@@ -1,4 +1,21 @@
 {
-  "lastUpdated": "2026-07-24T09:20:18.224Z",
-  "terms": {}
+  "lastUpdated": "2026-07-27T09:24:50.955Z",
+  "terms": {
+    "能量": {
+      "title": "能量",
+      "description": "角色生命值",
+      "sourcePath": "测试/词条.md",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": []
+    },
+    "魔力": {
+      "title": "魔力",
+      "description": "角色攻击力",
+      "sourcePath": "测试/词条.md",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": []
+    }
+  }
 }

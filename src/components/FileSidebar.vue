@@ -264,7 +264,7 @@ const treeApi = reactive({
 </script>
 
 <template>
-  <aside class="file-sidebar flex w-full min-h-0 flex-col border-r border-border bg-surface md:w-64 md:shrink-0">
+  <aside class="file-sidebar flex h-full w-full min-h-0 flex-col border-r border-border bg-surface">
     <div
       v-if="tree.length"
       class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1.5"

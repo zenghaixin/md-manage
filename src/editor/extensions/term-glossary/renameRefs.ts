@@ -63,3 +63,23 @@ export function rewriteOpenEditorTermRefs(
   view.dispatch(tr)
   return true
 }
+
+/**
+ * 当前编辑器是否存在行内已确认引用 termRef(title)。
+ * 不含定义块标题（定义块本身不代表「冲突里确认过」）。
+ */
+export function openEditorHasInlineTermRef(
+  view: EditorView | null | undefined,
+  title: string,
+): boolean {
+  if (!view || view.isDestroyed) return false
+  const needle = sanitizeTermTitle(title)
+  if (!needle) return false
+  let found = false
+  view.state.doc.descendants((node) => {
+    if (found) return false
+    if (node.type.name !== TERM_REF_NODE_NAME) return
+    if (sanitizeTermTitle(node.attrs.title) === needle) found = true
+  })
+  return found
+}

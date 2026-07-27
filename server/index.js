@@ -12,6 +12,40 @@ const GLOSSARY_FILE = path.resolve(
   __dirname,
   '../src/editor/extensions/term-glossary/glossary.json',
 )
+/** 项目级 UI 配置（不放 md/，避免混进设定文档） */
+const APP_CONFIG_FILE = path.resolve(__dirname, '../.app-config.json')
+
+const DEFAULT_APP_CONFIG = {
+  theme: 'system',
+  rightPanelActiveModuleId: '',
+}
+
+async function readAppConfig() {
+  try {
+    const raw = await fs.readFile(APP_CONFIG_FILE, 'utf-8')
+    const data = JSON.parse(raw)
+    return {
+      ...DEFAULT_APP_CONFIG,
+      ...(data && typeof data === 'object' ? data : {}),
+    }
+  } catch {
+    return { ...DEFAULT_APP_CONFIG }
+  }
+}
+
+async function writeAppConfig(patch) {
+  const current = await readAppConfig()
+  const next = {
+    ...current,
+    ...(patch && typeof patch === 'object' ? patch : {}),
+  }
+  if (!['system', 'light', 'dark'].includes(next.theme)) {
+    next.theme = 'system'
+  }
+  next.rightPanelActiveModuleId = String(next.rightPanelActiveModuleId || '')
+  await fs.writeFile(APP_CONFIG_FILE, `${JSON.stringify(next, null, 2)}\n`, 'utf-8')
+  return next
+}
 
 const TERM_BLOCK_RE =
   /:::[\t ]*term[\t ]*\[([^\]]*)\]\s*([\s\S]*?)\s*:::/gi
@@ -51,6 +85,23 @@ function sendErr(res, err) {
   const status = err.status || (err.code === 'ENOENT' ? 404 : 500)
   res.status(status).json({ error: err.message || String(err) })
 }
+
+/** 项目配置（主题、右栏模块等） */
+app.get('/api/app-config', async (_req, res) => {
+  try {
+    res.json(await readAppConfig())
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
+
+app.patch('/api/app-config', async (req, res) => {
+  try {
+    res.json(await writeAppConfig(req.body || {}))
+  } catch (err) {
+    sendErr(res, err)
+  }
+})
 
 /** 文档树 */
 app.get('/api/tree', async (_req, res) => {
@@ -747,6 +798,36 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/** 正文行内已确认引用 term[title]（不含 ::: term [title] 定义块） */
+function hasInlineConfirmedTermRef(markdown, title) {
+  const needle = String(title || '').trim()
+  if (!needle || !markdown) return false
+  const blockRe = /:::[\t ]*term[\t ]*\[[^\]]*\]\s*([\s\S]*?)\s*:::/gi
+  const masked = String(markdown).replace(blockRe, (block) =>
+    ' '.repeat(block.length),
+  )
+  const re = new RegExp(`term\\[\\s*${escapeRegExp(needle)}\\s*\\]`)
+  return re.test(masked)
+}
+
+/** 全库是否存在某标题的行内已确认引用 */
+async function anyFileHasInlineConfirmedTermRef(title) {
+  const needle = String(title || '').trim()
+  if (!needle) return false
+  const mdPaths = await fsTree.listAllMarkdownPaths()
+  for (const sourcePath of mdPaths) {
+    const fp = fsTree.absOf(sourcePath)
+    let content
+    try {
+      content = await fs.readFile(fp, 'utf-8')
+    } catch {
+      continue
+    }
+    if (hasInlineConfirmedTermRef(content, needle)) return true
+  }
+  return false
+}
+
 /** 全库把已确认 term[old] 替换为 term[new] */
 function replaceConfirmedRefs(markdown, oldTitle, newTitle) {
   const re = new RegExp(`term\\[\\s*${escapeRegExp(oldTitle)}\\s*\\]`, 'g')
@@ -800,8 +881,25 @@ function isIgnoredInText(text, matchFrom, matchTo, ignoreContexts) {
 }
 
 /**
+ * 全库是否存在某标题的行内已确认引用 term[title]（不含定义块）。
+ * 用于改名时决定是否把旧名写入 formerTitles。
+ */
+app.get('/api/glossary/has-confirmed-ref', async (req, res) => {
+  try {
+    const title = String(req.query?.title || '').trim()
+    if (!title) {
+      return res.status(400).json({ error: 'title 必填' })
+    }
+    const has = await anyFileHasInlineConfirmedTermRef(title)
+    res.json({ title, has })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
  * 改名后：同步已确认引用，并扫描裸新名/曾用名冲突。
- * body: { oldTitle, newTitle }
+ * body: { oldTitle, newTitle, alsoReplace?, recordAsFormer? }
  */
 app.post('/api/glossary/rename-sync', async (req, res) => {
   try {
@@ -817,6 +915,7 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
     const replaceTitles = Array.from(
       new Set([oldTitle, ...alsoReplace].filter((t) => t && t !== newTitle)),
     )
+    const recordAsFormer = req.body?.recordAsFormer === true
 
     const conflicts = []
     let refUpdatedFiles = 0
@@ -866,7 +965,7 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
             // 已「不需要修改」的上下文不再进冲突抽屉（含回改后的曾用名命中）
             if (isIgnoredInText(scanText, idx, to, ignoreContexts)) continue
             conflicts.push({
-              id: `${sourcePath}:${idx}:${kind}`,
+              id: `${sourcePath}:${idx}:${kind}:${needle}`,
               sourcePath,
               kind,
               hit: needle,
@@ -885,16 +984,24 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
     }
 
     console.log(
-      `[glossary/rename-sync] ${oldTitle} → ${newTitle}: refs=${refUpdatedFiles}, conflicts=${conflicts.length}, replace=[${replaceTitles.join(',')}]`,
+      `[glossary/rename-sync] ${oldTitle} → ${newTitle}: refs=${refUpdatedFiles}, conflicts=${conflicts.length}, replace=[${replaceTitles.join(',')}], recordFormer=${recordAsFormer}`,
     )
 
-    // 扫描结果整表写入 pendingManualConfirm（空数组 = 可自动确认）
+    // 扫描结果整表写入 pendingManualConfirm；曾用名按「是否承认过旧名」落库
     const latest = await readGlossaryFile()
     const terms = { ...latest.terms }
     const prevTerm = terms[newTitle]
+    const baseFormer = normalizeFormerTitles([
+      ...(prevTerm?.formerTitles || []),
+    ]).filter((f) => f !== newTitle && f !== oldTitle)
+    const formerTitles = normalizeFormerTitles(
+      recordAsFormer ? [...baseFormer, oldTitle] : baseFormer,
+    ).filter((f) => f !== newTitle)
+
     if (prevTerm) {
       terms[newTitle] = {
         ...prevTerm,
+        formerTitles,
         pendingManualConfirm: normalizePendingManualConfirm(conflicts),
       }
     } else {
@@ -903,7 +1010,7 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
         description: '',
         sourcePath: '',
         ignoreContexts: [],
-        formerTitles: normalizeFormerTitles([oldTitle]),
+        formerTitles,
         pendingManualConfirm: normalizePendingManualConfirm(conflicts),
       }
     }
@@ -912,6 +1019,7 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
     res.json({
       refUpdatedFiles,
       conflicts,
+      recordAsFormer,
       lastUpdated: saved.lastUpdated,
       terms: saved.terms,
     })
@@ -924,7 +1032,7 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
  * 批量应用冲突处理。
  * body: {
  *   newTitle,
- *   confirms: [{ sourcePath, from, to, title }],
+ *   confirms: [{ id, sourcePath, from, to, title, hit }],
  *   ignores: [{ sourcePath, from, to, context, termTitle }],
  *   resolvedIds: string[]  // 从 pendingManualConfirm 中删除
  * }
@@ -940,17 +1048,42 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
         .filter(Boolean),
     )
 
-    // 按文件聚合 confirms：把裸命中换成 term[title]
-    /** @type {Map<string, Array<{ from: number, to: number, title: string }>>} */
+    /** 在当前正文中定位命中（偏移失效时按 hit 重找） */
+    function locateHit(content, from, to, hit, title) {
+      const needle = String(hit || title || '').trim()
+      const start = Number(from)
+      const end = Number(to)
+      if (
+        needle &&
+        Number.isFinite(start) &&
+        Number.isFinite(end) &&
+        start >= 0 &&
+        end <= content.length &&
+        end > start &&
+        content.slice(start, end) === needle
+      ) {
+        return { from: start, to: end }
+      }
+      if (!needle) return null
+      const hint = Number.isFinite(start) ? Math.max(0, start - 32) : 0
+      let idx = content.indexOf(needle, hint)
+      if (idx < 0) idx = content.indexOf(needle)
+      if (idx < 0) return null
+      return { from: idx, to: idx + needle.length }
+    }
+
+    // 按文件聚合 confirms
+    /** @type {Map<string, Array<{ from: number, to: number, title: string, hit: string, id: string }>>} */
     const byFile = new Map()
     for (const item of confirms) {
       const sourcePath = String(item?.sourcePath || '').trim()
       const title = String(item?.title || newTitle).trim()
+      const hit = String(item?.hit || title).trim()
       const from = Number(item?.from)
       const to = Number(item?.to)
-      if (!sourcePath || !title || !Number.isFinite(from) || !Number.isFinite(to)) continue
+      if (!sourcePath || !title) continue
       if (!byFile.has(sourcePath)) byFile.set(sourcePath, [])
-      byFile.get(sourcePath).push({ from, to, title })
+      byFile.get(sourcePath).push({ from, to, title, hit, id: String(item?.id || '').trim() })
       const id = String(item?.id || '').trim()
       if (id) resolvedIds.add(id)
     }
@@ -958,13 +1091,27 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
     for (const [sourcePath, ops] of byFile) {
       const fp = fsTree.absOf(sourcePath)
       let content = await fs.readFile(fp, 'utf-8')
-      const sorted = [...ops].sort((a, b) => b.from - a.from)
-      for (const op of sorted) {
-        if (op.from < 0 || op.to > content.length || op.to <= op.from) continue
+      // 每次在「当前正文」上选最靠后的可定位命中，避免同文件多替换后偏移错乱
+      const pending = [...ops]
+      while (pending.length) {
+        let bestI = -1
+        let bestSpan = null
+        for (let i = 0; i < pending.length; i += 1) {
+          const op = pending[i]
+          const span = locateHit(content, op.from, op.to, op.hit, op.title)
+          if (!span) continue
+          if (!bestSpan || span.from > bestSpan.from) {
+            bestSpan = span
+            bestI = i
+          }
+        }
+        if (bestI < 0 || !bestSpan) break
+        const [op] = pending.splice(bestI, 1)
         content =
-          content.slice(0, op.from) +
+          content.slice(0, bestSpan.from) +
           `term[${op.title}]` +
-          content.slice(op.to)
+          content.slice(bestSpan.to)
+        if (op.id) resolvedIds.add(op.id)
       }
       await fs.writeFile(fp, content, 'utf-8')
     }
@@ -994,14 +1141,15 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
       if (id) resolvedIds.add(id)
     }
 
-    // 从 pending 中删除已处理项
-    if (newTitle && resolvedIds.size && terms[newTitle]) {
-      const prev = terms[newTitle]
-      terms[newTitle] = {
-        ...prev,
-        pendingManualConfirm: normalizePendingManualConfirm(
-          prev.pendingManualConfirm,
-        ).filter((c) => !resolvedIds.has(c.id)),
+    // 从所有词条的 pending 中删除已处理项
+    if (resolvedIds.size) {
+      for (const [key, prev] of Object.entries(terms)) {
+        const pending = normalizePendingManualConfirm(prev?.pendingManualConfirm)
+        if (!pending.length) continue
+        const next = pending.filter((c) => !resolvedIds.has(c.id))
+        if (next.length !== pending.length) {
+          terms[key] = { ...prev, pendingManualConfirm: next }
+        }
       }
     }
 

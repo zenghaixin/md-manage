@@ -158,24 +158,28 @@ export const useGlossaryStore = defineStore('glossary', {
     },
 
     /**
-     * 改名：旧名进 formerTitles；保留 ignoreContexts。
+     * 改名：保留原 formerTitles（去掉新名）；仅在承认过旧名时把旧名写入曾用名。
      * pending 先清空，等 rename-sync 扫描结果整表写入。
+     * @param recordAsFormer 正文是否已有行内 term[旧名]（确认冲突后的结果）
      */
     prepareRename(
       oldTitle: string,
       newTitle: string,
       description: string,
       sourcePath: string,
+      recordAsFormer = false,
     ): Record<string, GlossaryTerm> | null {
       const from = sanitizeTermTitle(oldTitle)
       const to = sanitizeTermTitle(newTitle)
       if (!from || !to) return null
       const terms: Record<string, GlossaryTerm> = { ...this.terms }
       const prev = terms[from]
-      const former = normalizeFormerTitles([
+      const baseFormer = normalizeFormerTitles([
         ...(prev?.formerTitles || []),
-        from,
-      ]).filter((f) => f !== to)
+      ]).filter((f) => f !== to && f !== from)
+      const former = normalizeFormerTitles(
+        recordAsFormer ? [...baseFormer, from] : baseFormer,
+      ).filter((f) => f !== to)
 
       if (from !== to) delete terms[from]
       terms[to] = {
