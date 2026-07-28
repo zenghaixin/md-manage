@@ -99,4 +99,14 @@ export interface MarkdownExtension {
    * 扩展在此做与本文件相关的副作用（如同步词条表），不要在 MarkdownEditor 里写死。
    */
   onFileSave?(ctx: FileContext): void | Promise<void>
+
+  /**
+   * 从磁盘读入编辑器前：剥掉扩展私有落库块等。
+   */
+  transformFromStorage?(markdown: string, path?: string): string
+
+  /**
+   * 写入磁盘前：把扩展私有数据附加回 Markdown。
+   */
+  transformToStorage?(markdown: string, path?: string): string
 }

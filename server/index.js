@@ -1047,28 +1047,44 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
         .map((id) => String(id || '').trim())
         .filter(Boolean),
     )
+    /** 兜底：按 path|hit|title 清 pending，避免旧 id 格式对不上 */
+    const resolvedKeys = new Set()
 
-    /** 在当前正文中定位命中（偏移失效时按 hit 重找） */
+    /** 把定义块与已确认 term[] 掩成空格，避免命中写进 term 内部 */
+    function maskProtected(content) {
+      let masked = String(content || '').replace(
+        /:::[\t ]*term[\t ]*\[[^\]]*\]\s*([\s\S]*?)\s*:::/gi,
+        (block) => ' '.repeat(block.length),
+      )
+      masked = masked.replace(/term\[[^\]]*\]/g, (m) => ' '.repeat(m.length))
+      return masked
+    }
+
+    /** 仅在裸文本中定位 hit（绝不落入 term[...] 内） */
     function locateHit(content, from, to, hit, title) {
       const needle = String(hit || title || '').trim()
+      if (!needle) return null
+      const masked = maskProtected(content)
       const start = Number(from)
       const end = Number(to)
-      if (
-        needle &&
-        Number.isFinite(start) &&
-        Number.isFinite(end) &&
-        start >= 0 &&
-        end <= content.length &&
-        end > start &&
-        content.slice(start, end) === needle
-      ) {
+
+      const spanOk = (a, b) => {
+        if (a < 0 || b > content.length || b <= a) return false
+        if (content.slice(a, b) !== needle) return false
+        // 掩码后对应区间必须仍等于 needle（说明不在 term[] / 定义块内）
+        if (masked.slice(a, b) !== needle) return false
+        return true
+      }
+
+      if (Number.isFinite(start) && Number.isFinite(end) && spanOk(start, end)) {
         return { from: start, to: end }
       }
-      if (!needle) return null
+
       const hint = Number.isFinite(start) ? Math.max(0, start - 32) : 0
-      let idx = content.indexOf(needle, hint)
-      if (idx < 0) idx = content.indexOf(needle)
+      let idx = masked.indexOf(needle, hint)
+      if (idx < 0) idx = masked.indexOf(needle)
       if (idx < 0) return null
+      if (!spanOk(idx, idx + needle.length)) return null
       return { from: idx, to: idx + needle.length }
     }
 
@@ -1081,17 +1097,18 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
       const hit = String(item?.hit || title).trim()
       const from = Number(item?.from)
       const to = Number(item?.to)
-      if (!sourcePath || !title) continue
-      if (!byFile.has(sourcePath)) byFile.set(sourcePath, [])
-      byFile.get(sourcePath).push({ from, to, title, hit, id: String(item?.id || '').trim() })
       const id = String(item?.id || '').trim()
+      if (!sourcePath || !title || !hit) continue
+      if (!byFile.has(sourcePath)) byFile.set(sourcePath, [])
+      byFile.get(sourcePath).push({ from, to, title, hit, id })
       if (id) resolvedIds.add(id)
+      resolvedKeys.add(`${sourcePath}\0${hit}\0${title}`)
     }
 
     for (const [sourcePath, ops] of byFile) {
       const fp = fsTree.absOf(sourcePath)
       let content = await fs.readFile(fp, 'utf-8')
-      // 每次在「当前正文」上选最靠后的可定位命中，避免同文件多替换后偏移错乱
+      // 每次在当前正文上选最靠后的「裸文本」命中
       const pending = [...ops]
       while (pending.length) {
         let bestI = -1
@@ -1105,13 +1122,17 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
             bestI = i
           }
         }
-        if (bestI < 0 || !bestSpan) break
+        if (bestI < 0 || !bestSpan) {
+          // 剩余项无法安全定位：仍视为已处理（清 pending），避免反复点坏正文
+          break
+        }
         const [op] = pending.splice(bestI, 1)
         content =
           content.slice(0, bestSpan.from) +
           `term[${op.title}]` +
           content.slice(bestSpan.to)
         if (op.id) resolvedIds.add(op.id)
+        resolvedKeys.add(`${sourcePath}\0${op.hit}\0${op.title}`)
       }
       await fs.writeFile(fp, content, 'utf-8')
     }
@@ -1123,6 +1144,8 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
     for (const item of ignores) {
       const termTitle = String(item?.termTitle || newTitle).trim()
       const ctx = String(item?.context || '').trim()
+      const sourcePath = String(item?.sourcePath || '').trim()
+      const hit = String(item?.hit || '').trim()
       if (!termTitle || !ctx) continue
       const prev = terms[termTitle]
       const list = normalizeIgnoreContexts(prev?.ignoreContexts)
@@ -1130,7 +1153,7 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
       terms[termTitle] = {
         title: termTitle,
         description: String(prev?.description ?? '').trim(),
-        sourcePath: String(prev?.sourcePath || item?.sourcePath || '').trim(),
+        sourcePath: String(prev?.sourcePath || sourcePath || '').trim(),
         ignoreContexts: list,
         formerTitles: normalizeFormerTitles(prev?.formerTitles),
         pendingManualConfirm: normalizePendingManualConfirm(
@@ -1139,14 +1162,24 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
       }
       const id = String(item?.id || '').trim()
       if (id) resolvedIds.add(id)
+      if (sourcePath && (hit || termTitle)) {
+        resolvedKeys.add(`${sourcePath}\0${hit || termTitle}\0${termTitle}`)
+      }
     }
 
-    // 从所有词条的 pending 中删除已处理项
-    if (resolvedIds.size) {
+    // 从所有词条的 pending 中删除已处理项（id 或 path+hit+title）
+    if (resolvedIds.size || resolvedKeys.size) {
       for (const [key, prev] of Object.entries(terms)) {
         const pending = normalizePendingManualConfirm(prev?.pendingManualConfirm)
         if (!pending.length) continue
-        const next = pending.filter((c) => !resolvedIds.has(c.id))
+        const termTitle = String(prev?.title || key || '').trim()
+        const next = pending.filter((c) => {
+          if (resolvedIds.has(c.id)) return false
+          const k1 = `${c.sourcePath}\0${c.hit}\0${termTitle}`
+          const k2 = `${c.sourcePath}\0${c.hit}\0${c.hit}`
+          if (resolvedKeys.has(k1) || resolvedKeys.has(k2)) return false
+          return true
+        })
         if (next.length !== pending.length) {
           terms[key] = { ...prev, pendingManualConfirm: next }
         }

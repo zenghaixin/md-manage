@@ -66,7 +66,7 @@ import { suppressAutoConfirmForTitle } from './match'
 import { commitTermRename } from './renameFlow'
 import { TermRefNode } from './termRef'
 
-const pluginKey = new PluginKey('termGlossaryHighlight')
+export const pluginKey = new PluginKey('termGlossaryHighlight')
 const convertPluginKey = new PluginKey('termGlossaryAutoConfirm')
 
 const DIALOG_W = 400
@@ -1561,46 +1561,6 @@ function positionPicker(
 }
 
 /**
- * 选区「不是词条」按钮：选中文案须包含未确认命中，且选区不能恰好等于某个词条标题。
- */
-class NotTermBar {
-  private el: HTMLButtonElement | null = null
-
-  hide() {
-    this.el?.remove()
-    this.el = null
-  }
-
-  show(anchorRect: DOMRect, onClick: () => void) {
-    this.hide()
-    const btn = document.createElement('button')
-    btn.type = 'button'
-    btn.className = 'ext-term-not-term'
-    btn.textContent = '不是词条'
-    btn.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      this.hide()
-      onClick()
-    })
-    document.body.appendChild(btn)
-    this.el = btn
-    const w = btn.offsetWidth || 72
-    let left = anchorRect.left + (anchorRect.width - w) / 2
-    let top = anchorRect.bottom + 6
-    if (left < 8) left = 8
-    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8
-    if (top + 32 > window.innerHeight - 8) top = anchorRect.top - 36
-    btn.style.left = `${Math.round(left)}px`
-    btn.style.top = `${Math.round(top)}px`
-  }
-
-  destroy() {
-    this.hide()
-  }
-}
-
-/**
  * 正文 / 词条描述：已确认引用节点高亮；未确认灰线候选；空格 / term[] 自动确认。
  */
 export const TermGlossaryHighlight = Extension.create({
@@ -1613,11 +1573,9 @@ export const TermGlossaryHighlight = Extension.create({
   addProseMirrorPlugins() {
     const manager = new TermDialogManager()
     const picker = new TermConfirmPicker()
-    const notTermBar = new NotTermBar()
 
     const hideUi = () => {
       picker.hide()
-      notTermBar.hide()
     }
 
     const formerSecondary = (
@@ -2154,7 +2112,7 @@ export const TermGlossaryHighlight = Extension.create({
               const t = event.target as HTMLElement | null
               if (
                 t?.closest?.(`.${TERM_PICKER_CLASS}`) ||
-                t?.closest?.('.ext-term-not-term')
+                t?.closest?.('.ext-selection-bubble')
               ) {
                 return false
               }
@@ -2304,84 +2262,6 @@ export const TermGlossaryHighlight = Extension.create({
               )
               return true
             },
-            mouseup: (view) => {
-              window.setTimeout(() => {
-                const { from, to, empty } = view.state.selection
-                if (empty || to <= from) {
-                  notTermBar.hide()
-                  return
-                }
-                const selected = view.state.doc.textBetween(from, to, '')
-                const trimmed = selected.trim()
-                if (!trimmed) {
-                  notTermBar.hide()
-                  return
-                }
-
-                const titles = allTitles(view.state.doc)
-                // 选区恰好等于某个词条标题 → 不出现「不是词条」
-                if (titles.includes(trimmed)) {
-                  notTermBar.hide()
-                  return
-                }
-
-                const candidates = findCandidateMatches(view.state.doc)
-                const overlaps = candidates.some(
-                  (c) => c.from < to && c.to > from,
-                )
-                if (!overlaps) {
-                  notTermBar.hide()
-                  return
-                }
-
-                // 选区须包含至少一个未确认命中的标题文本
-                const hitTitles = titlesContainedInText(trimmed, titles)
-                if (!hitTitles.length) {
-                  notTermBar.hide()
-                  return
-                }
-
-                let coords: { left: number; right: number; top: number; bottom: number }
-                try {
-                  const start = view.coordsAtPos(from)
-                  const end = view.coordsAtPos(to)
-                  coords = {
-                    left: Math.min(start.left, end.left),
-                    right: Math.max(start.right, end.right),
-                    top: Math.min(start.top, end.top),
-                    bottom: Math.max(start.bottom, end.bottom),
-                  }
-                } catch {
-                  notTermBar.hide()
-                  return
-                }
-
-                notTermBar.show(
-                  {
-                    left: coords.left,
-                    top: coords.top,
-                    right: coords.right,
-                    bottom: coords.bottom,
-                    width: coords.right - coords.left,
-                    height: coords.bottom - coords.top,
-                    x: coords.left,
-                    y: coords.top,
-                    toJSON: () => ({}),
-                  } as DOMRect,
-                  () => {
-                    void useGlossaryStore()
-                      .addIgnoreContext(trimmed, hitTitles)
-                      .then(() => {
-                        const tr = view.state.tr.setMeta(pluginKey, {
-                          refresh: true,
-                        })
-                        view.dispatch(tr)
-                      })
-                  },
-                )
-              }, 0)
-              return false
-            },
           },
         },
         view(editorView) {
@@ -2401,7 +2281,7 @@ export const TermGlossaryHighlight = Extension.create({
             const t = e.target as HTMLElement | null
             if (
               t?.closest?.(`.${TERM_PICKER_CLASS}`) ||
-              t?.closest?.('.ext-term-not-term') ||
+              t?.closest?.('.ext-selection-bubble') ||
               t?.closest?.(`.${TERM_REF_CANDIDATE_CLASS}`)
             ) {
               return
@@ -2421,7 +2301,6 @@ export const TermGlossaryHighlight = Extension.create({
               bindTermFlashView(null)
               manager.destroy()
               picker.destroy()
-              notTermBar.destroy()
             },
           }
         },

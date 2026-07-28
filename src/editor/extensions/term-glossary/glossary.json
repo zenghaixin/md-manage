@@ -1,11 +1,13 @@
 {
-  "lastUpdated": "2026-07-27T09:24:50.955Z",
+  "lastUpdated": "2026-07-28T09:15:14.552Z",
   "terms": {
     "能量": {
       "title": "能量",
       "description": "角色生命值",
       "sourcePath": "测试/词条.md",
-      "ignoreContexts": [],
+      "ignoreContexts": [
+        "角色能量"
+      ],
       "formerTitles": [],
       "pendingManualConfirm": []
     },
@@ -15,7 +17,26 @@
       "sourcePath": "测试/词条.md",
       "ignoreContexts": [],
       "formerTitles": [],
-      "pendingManualConfirm": []
+      "pendingManualConfirm": [
+        {
+          "id": "测试/测试.md:14:new-title:魔力",
+          "sourcePath": "测试/测试.md",
+          "kind": "new-title",
+          "hit": "魔力",
+          "context": "角色魔力",
+          "from": 14,
+          "to": 16
+        },
+        {
+          "id": "测试/测试.md:20:new-title:魔力",
+          "sourcePath": "测试/测试.md",
+          "kind": "new-title",
+          "hit": "魔力",
+          "context": "我的魔力",
+          "from": 20,
+          "to": 22
+        }
+      ]
     }
   }
 }

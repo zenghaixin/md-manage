@@ -25,6 +25,31 @@ const rightPanelDismissHandlers = new Set<() => void>()
 
 let rightPanelHost: HTMLElement | null = null
 
+/** 选区气泡等手势期间禁止切文件，避免 mouseup 穿透导致重载冲掉未保存编辑 */
+let uiGestureLockCount = 0
+let uiGestureLockTimer: ReturnType<typeof setTimeout> | null = null
+
+export function beginUiGestureLock(ms = 400): void {
+  uiGestureLockCount += 1
+  if (uiGestureLockTimer != null) clearTimeout(uiGestureLockTimer)
+  uiGestureLockTimer = setTimeout(() => {
+    uiGestureLockTimer = null
+    uiGestureLockCount = 0
+  }, Math.max(50, ms))
+}
+
+export function isUiGestureLocked(): boolean {
+  return uiGestureLockCount > 0
+}
+
+export function endUiGestureLock(): void {
+  if (uiGestureLockTimer != null) {
+    clearTimeout(uiGestureLockTimer)
+    uiGestureLockTimer = null
+  }
+  uiGestureLockCount = 0
+}
+
 function normPath(sourcePath: string): string {
   return String(sourcePath || '')
     .replace(/\\/g, '/')
@@ -34,6 +59,10 @@ function normPath(sourcePath: string): string {
 
 /** 请求打开文档（完整相对路径） */
 export function requestOpenFile(payload: OpenFilePayload): void {
+  if (isUiGestureLocked()) {
+    console.warn('[shellEvents] open-file ignored during ui gesture lock')
+    return
+  }
   const path = normPath(payload?.path)
   if (!path) return
   for (const handler of openFileHandlers) {
@@ -61,6 +90,10 @@ export function onOpenFileRequest(handler: Handler<OpenFilePayload>): () => void
 
 /** 请求重新加载已打开的文档内容（扩展改写了磁盘文件后） */
 export function requestReloadFile(payload: OpenFilePayload): void {
+  if (isUiGestureLocked()) {
+    console.warn('[shellEvents] reload-file ignored during ui gesture lock')
+    return
+  }
   const path = normPath(payload?.path)
   if (!path) return
   for (const handler of reloadFileHandlers) {

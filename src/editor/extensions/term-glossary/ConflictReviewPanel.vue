@@ -281,7 +281,8 @@ async function applyIgnoreList(list) {
 }
 
 function applyConfirmSelected() {
-  return applyConfirmList(selectedItems())
+  // 底栏「一键」按当前列表全部处理，避免勾选状态不同步只打到第一组
+  return applyConfirmList(items.value.slice())
 }
 
 function applyConfirmGroup(group) {
@@ -485,11 +486,11 @@ defineExpose({
         text
         type="primary"
         size="small"
-        :disabled="!selectedCount"
+        :disabled="!totalCount"
         :loading="busy"
         @click="applyConfirmSelected"
       >
-        一键处理所有已勾选 ({{ selectedCount }})
+        一键确认全部 ({{ totalCount }})
       </el-button>
       <el-button
         text

@@ -7,7 +7,10 @@ import AppIcon from './AppIcon.vue'
 import { api } from '../api'
 import { fromStorageMarkdown, toStorageMarkdown } from '../editor/blankLines'
 import { HeadingBackspace } from '../editor/headingBackspace'
+import { SelectionActionsExtension } from './selection-actions'
 import {
+  applyFromStorageTransforms,
+  applyToStorageTransforms,
   getAllTiptapExtensions,
   readEditorMarkdown,
   runFileSaveHooks,
@@ -44,7 +47,14 @@ let applyingValue = false
 let stopReload = null
 
 const editor = useEditor({
-  extensions: [StarterKit, Markdown, HeadingBackspace, ...getAllTiptapExtensions()],
+  extensions: [
+    StarterKit,
+    HeadingBackspace,
+    SelectionActionsExtension,
+    // 自定义节点须先于 Markdown，便于 tokenizer / renderMarkdown 注册完整
+    ...getAllTiptapExtensions(),
+    Markdown,
+  ],
   content: '',
   editorProps: {
     attributes: {
@@ -54,8 +64,11 @@ const editor = useEditor({
   },
   onUpdate: ({ editor: ed }) => {
     if (applyingValue) return
-    // 落盘用真空行，不把 &nbsp; 写进源码
-    content.value = toStorageMarkdown(ed.getMarkdown())
+    // 落盘用真空行，并套用扩展 transform（如备注描述块）
+    content.value = applyToStorageTransforms(
+      toStorageMarkdown(ed.getMarkdown()),
+      filePath.value,
+    )
     dirty.value = true
   },
 })
@@ -83,18 +96,19 @@ function onSourceTextareaInput(event) {
 
 function pullFromEditor() {
   if (editorReady.value && viewMode.value === 'edit') {
-    content.value = readEditorMarkdown(editor.value)
+    content.value = readEditorMarkdown(editor.value, filePath.value)
   }
 }
 
 function syncEditorValue(value) {
   if (!editorReady.value || viewMode.value !== 'edit') return
   const storage = value || ''
-  const current = toStorageMarkdown(editor.value.getMarkdown())
-  if (current === storage) return
+  const forEditor = applyFromStorageTransforms(storage, filePath.value)
+  const currentBody = toStorageMarkdown(editor.value.getMarkdown())
+  if (currentBody === forEditor) return
   applyingValue = true
   // 读入时把连续空行还原成 TipTap 空段
-  editor.value.commands.setContent(fromStorageMarkdown(storage), {
+  editor.value.commands.setContent(fromStorageMarkdown(forEditor), {
     contentType: 'markdown',
     emitUpdate: false,
   })

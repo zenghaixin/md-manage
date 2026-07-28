@@ -15,6 +15,7 @@ import {
   notifyRightPanelDismiss,
   notifyRightPanelOpened,
   getRightPanelHost,
+  isUiGestureLocked,
 } from '../editor/shellEvents'
 import {
   getRightPanelModule,
@@ -100,6 +101,11 @@ async function mountActiveModule() {
     getRightPanelHost()
   if (!host) return
 
+  // 同一模块已挂载则不重复 mount，避免右栏/布局抖动波及编辑器
+  if (id && id === mountedModuleId && host.childNodes.length) {
+    return
+  }
+
   if (mountedModuleId) {
     try {
       getRightPanelModule(mountedModuleId)?.unmount?.()
@@ -141,6 +147,7 @@ function unmountActiveModule() {
 async function activateModule(moduleId, { persist = true } = {}) {
   const next = resolveModuleId(moduleId)
   activeModuleId.value = next
+  // 仅用户点书签时持久化；扩展自动打开右栏不要写 .app-config（会触发 Vite 整页刷新）
   if (persist) {
     void patchAppConfig({ rightPanelActiveModuleId: next })
   }
@@ -413,6 +420,8 @@ async function onMove({ fromPath, toParentPath, toIndex }) {
 }
 
 function onSelectFile({ path }) {
+  // 选区气泡点击期间禁止切文件，否则会 loadFile 冲掉刚打上的备注
+  if (isUiGestureLocked()) return
   activePath.value = path
   if (isMobile.value) sidebarOpen.value = false
 }
@@ -421,6 +430,7 @@ let stopOpenFile = null
 let stopOpenRight = null
 let stopCloseRight = null
 let stopModules = null
+let stopWinFocus = null
 
 watch(isMobile, (mobile) => {
   if (!mobile) sidebarOpen.value = false
@@ -442,8 +452,12 @@ onMounted(async () => {
     onSelectFile({ path })
   })
   stopOpenRight = onOpenRightPanelRequest(async ({ moduleId, onReady }) => {
+    const wasOpen = rightOpen.value
     rightOpen.value = true
-    await activateModule(moduleId || activeModuleId.value)
+    // 扩展请求打开：切换模块但不写 app-config，避免 Vite 监听到文件变更整页刷新
+    if (!wasOpen || moduleId) {
+      await activateModule(moduleId || activeModuleId.value, { persist: false })
+    }
     await nextTick()
     const host =
       opsPanelRef.value?.getHost?.() || getRightPanelHost()
@@ -452,6 +466,14 @@ onMounted(async () => {
   stopCloseRight = onCloseRightPanelRequest(() => {
     closeRightPanelSilent()
   })
+
+  const onWinFocus = () => {
+    // 在资源管理器里直接增删 md 后，回前台补一次树
+    void refreshTree(activePath.value).catch(() => {})
+  }
+  window.addEventListener('focus', onWinFocus)
+  stopWinFocus = () => window.removeEventListener('focus', onWinFocus)
+
   try {
     await refreshTree()
   } catch (err) {
@@ -468,6 +490,8 @@ onUnmounted(() => {
   stopCloseRight = null
   stopModules?.()
   stopModules = null
+  stopWinFocus?.()
+  stopWinFocus = null
   unmountActiveModule()
 })
 </script>

@@ -9,6 +9,7 @@
  */
 
 import { registerExtension } from './registry'
+import remark from './remark'
 import termGlossary from './term-glossary'
 
 export type {
@@ -29,10 +30,16 @@ export {
   unregisterExtension,
 } from './registry'
 
-export { getAllTiptapExtensions, readEditorMarkdown } from './mount'
+export {
+  applyFromStorageTransforms,
+  applyToStorageTransforms,
+  getAllTiptapExtensions,
+  readEditorMarkdown,
+} from './mount'
 export { runAppStartHooks, runFileSaveHooks } from './hooks'
 
 export { default as termGlossary, TERM_GLOSSARY_ID, TermGlossaryNode } from './term-glossary'
 
-/** 内置扩展：新增扩展时在此 register 即可 */
+/** 内置扩展：仅放自定义标签/语法类功能 */
+registerExtension(remark)
 registerExtension(termGlossary)

@@ -137,6 +137,8 @@ const termGlossaryExtension: MarkdownExtension = {
     await useGlossaryStore().bootstrap()
     const { bindPendingConflictRestore } = await import('./conflictDrawer')
     bindPendingConflictRestore()
+    const { bindNotTermSelectionAction } = await import('./notTermAction')
+    bindNotTermSelectionAction()
   },
 
   /** 存盘后：按当前文件同步词条到全局表 */
