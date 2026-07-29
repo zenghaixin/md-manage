@@ -15,6 +15,9 @@ dist-ssr
 # 本地文档内容
 md/
 
+# 运行时本地词库（由 API 读写，勿提交）
+**/glossary.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
