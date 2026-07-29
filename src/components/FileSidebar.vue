@@ -1,7 +1,10 @@
 <script setup>
-import { nextTick, reactive, ref, watch } from 'vue'
-import AppIcon from './AppIcon.vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import FileTreeNode from './FileTreeNode.vue'
+import {
+  onDocumentOutlineChanged,
+  requestScrollToHeading,
+} from '../editor/shellEvents'
 
 const props = defineProps({
   tree: { type: Array, default: () => [] },
@@ -20,6 +23,16 @@ const emit = defineEmits([
   'move',
 ])
 
+/** @type {import('vue').Ref<'files' | 'outline'>} */
+const sideTab = ref('files')
+const sideTabs = [
+  { id: 'files', label: '文件' },
+  { id: 'outline', label: '大纲' },
+]
+/** @type {import('vue').Ref<import('../editor/shellEvents').OutlineHeading[]>} */
+const outline = ref([])
+const activeOutlineId = ref('')
+
 const expanded = reactive({})
 const renamingKey = ref('')
 const renameDraft = ref('')
@@ -29,6 +42,7 @@ const dropHint = ref(null)
 /** 避免 dragend 先于 drop 清空状态导致松手无效果 */
 let lastDropIntent = null
 let longPressTimer = null
+let stopOutline = null
 
 watch(
   () => JSON.stringify(props.tree),
@@ -58,6 +72,38 @@ watch(
   },
   { immediate: true },
 )
+
+onMounted(() => {
+  stopOutline = onDocumentOutlineChanged((items) => {
+    outline.value = items || []
+    if (
+      activeOutlineId.value &&
+      !outline.value.some((h) => h.id === activeOutlineId.value)
+    ) {
+      activeOutlineId.value = ''
+    }
+  })
+})
+
+onUnmounted(() => {
+  stopOutline?.()
+  stopOutline = null
+})
+
+function setSideTab(tab) {
+  sideTab.value = tab
+}
+
+function onOutlineClick(item) {
+  if (!item) return
+  activeOutlineId.value = item.id
+  requestScrollToHeading({ pos: item.pos, line: item.line })
+}
+
+function outlinePad(level) {
+  const lv = Math.min(Math.max(Number(level) || 1, 1), 6)
+  return `${(lv - 1) * 0.7}rem`
+}
 
 function displayName(fileName) {
   return String(fileName || '').replace(/\.md$/, '')
@@ -266,34 +312,90 @@ const treeApi = reactive({
 <template>
   <aside class="file-sidebar flex h-full w-full min-h-0 flex-col border-r border-border bg-surface">
     <div
-      v-if="tree.length"
-      class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1.5"
-      @dragover.prevent="onDragOverRow($event, { parentPath: '', index: tree.length })"
-      @drop="onDropRow"
+      class="sidebar-tab-bar shrink-0 px-2 pt-2"
+      role="tablist"
+      aria-label="侧栏视图"
     >
-      <FileTreeNode
-        v-for="(node, index) in tree"
-        :key="node.path"
-        :node="node"
-        :index="index"
-        parent-path=""
-        :api="treeApi"
-      />
-    </div>
-
-    <p v-else class="m-auto px-4 py-6 text-center text-sm leading-normal text-muted">
-      暂无文件夹
-    </p>
-
-    <div class="shrink-0 p-2">
       <button
+        v-for="tab in sideTabs"
+        :key="tab.id"
         type="button"
-        class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md bg-surface-hover px-2 py-2 text-sm text-ink transition-colors hover:bg-accent-soft hover:text-accent"
-        @click="emit('add-root-folder')"
+        role="tab"
+        class="sidebar-bookmark-tab"
+        :class="{ 'is-active': sideTab === tab.id }"
+        :aria-selected="sideTab === tab.id"
+        @click="setSideTab(tab.id)"
       >
-        <span>新建文件夹</span>
+        {{ tab.label }}
       </button>
     </div>
+
+    <template v-if="sideTab === 'files'">
+      <div
+        v-if="tree.length"
+        class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1.5"
+        @dragover.prevent="onDragOverRow($event, { parentPath: '', index: tree.length })"
+        @drop="onDropRow"
+      >
+        <FileTreeNode
+          v-for="(node, index) in tree"
+          :key="node.path"
+          :node="node"
+          :index="index"
+          parent-path=""
+          :api="treeApi"
+        />
+      </div>
+
+      <p v-else class="m-auto px-4 py-6 text-center text-sm leading-normal text-muted">
+        暂无文件夹
+      </p>
+
+      <div class="shrink-0 p-2">
+        <button
+          type="button"
+          class="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md bg-surface-hover px-2 py-2 text-sm text-ink transition-colors hover:bg-accent-soft hover:text-accent"
+          @click="emit('add-root-folder')"
+        >
+          <span>新建文件夹</span>
+        </button>
+      </div>
+    </template>
+
+    <template v-else>
+      <div
+        v-if="outline.length"
+        class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 py-1.5"
+        role="list"
+        aria-label="文档大纲"
+      >
+        <button
+          v-for="item in outline"
+          :key="item.id"
+          type="button"
+          role="listitem"
+          class="mb-0.5 flex w-full cursor-pointer items-start rounded-md border-0 px-2 py-1.5 text-left text-sm leading-snug transition-colors"
+          :class="
+            item.id === activeOutlineId
+              ? 'bg-accent-soft text-accent'
+              : 'bg-transparent text-ink hover:bg-surface-hover'
+          "
+          :style="{ paddingLeft: `calc(0.5rem + ${outlinePad(item.level)})` }"
+          :title="item.text"
+          @click="onOutlineClick(item)"
+        >
+          <span
+            class="mr-1.5 shrink-0 font-mono text-[0.7rem] leading-5 text-muted"
+            aria-hidden="true"
+          >H{{ item.level }}</span>
+          <span class="min-w-0 flex-1 truncate">{{ item.text }}</span>
+        </button>
+      </div>
+
+      <p v-else class="m-auto px-4 py-6 text-center text-sm leading-normal text-muted">
+        {{ activePath ? '当前文档暂无标题' : '打开文档后显示大纲' }}
+      </p>
+    </template>
   </aside>
 </template>
 
@@ -318,5 +420,44 @@ const treeApi = reactive({
 .file-sidebar .drop-into {
   outline: 1px solid var(--accent, #2563eb);
   background: color-mix(in srgb, var(--accent, #2563eb) 12%, transparent);
+}
+
+.sidebar-tab-bar {
+  display: flex;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--border, #c5d0d8);
+}
+
+.sidebar-bookmark-tab {
+  position: relative;
+  box-sizing: border-box;
+  flex: 1;
+  margin: 0 0 -1px;
+  padding: 0.45rem 0.5rem 0.55rem;
+  border: 1px solid var(--border, #c5d0d8);
+  border-radius: 0.45rem 0.45rem 0 0;
+  background: color-mix(in srgb, var(--surface, #f4f7f9) 88%, var(--ink, #1a2830));
+  color: var(--muted, #5a6b75);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 -1px 4px rgba(26, 40, 48, 0.08);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.sidebar-bookmark-tab:hover {
+  background: var(--surface-hover, #e8eef2);
+  color: var(--ink, #1a2830);
+}
+
+.sidebar-bookmark-tab.is-active {
+  z-index: 1;
+  background: transparent;
+  color: var(--accent, #2563eb);
+  border-color: var(--border, #c5d0d8);
+  border-bottom-color: var(--surface, #f4f7f9);
+  box-shadow: 0 -1px 5px rgba(26, 40, 48, 0.1);
 }
 </style>

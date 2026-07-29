@@ -163,8 +163,14 @@ defineExpose({
 }
 
 .ops-module-tab.is-active {
-  background: var(--accent-soft, #dbeafe);
+  z-index: 1;
+  background: var(--surface, #f4f7f9);
   color: var(--accent, #2563eb);
-  border-color: color-mix(in srgb, var(--accent, #2563eb) 45%, var(--border, #c5d0d8));
+  border-color: var(--border, #c5d0d8);
+  border-right: none;
+  /* 盖住面板左边框，视觉上只剩上/下/左三边 */
+  margin-right: -1px;
+  padding-right: 1px;
+  box-shadow: -2px 1px 5px rgba(26, 40, 48, 0.08);
 }
 </style>

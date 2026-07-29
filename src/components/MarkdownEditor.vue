@@ -18,6 +18,8 @@ import {
 import {
   onReloadFileRequest,
   onSaveCurrentFileRequest,
+  onScrollToHeadingRequest,
+  publishDocumentOutline,
 } from '../editor/shellEvents'
 
 const props = defineProps({
@@ -70,9 +72,117 @@ const editor = useEditor({
       filePath.value,
     )
     dirty.value = true
+    publishOutlineFromEditor(ed)
+  },
+  onCreate: ({ editor: ed }) => {
+    publishOutlineFromEditor(ed)
   },
 })
 const editorReady = computed(() => !!editor.value && !editor.value.isDestroyed)
+
+/** @param {import('@tiptap/core').Editor | null | undefined} ed */
+function publishOutlineFromEditor(ed) {
+  if (!filePath.value || !ed || ed.isDestroyed) {
+    publishDocumentOutline([])
+    return
+  }
+  /** @type {import('../editor/shellEvents').OutlineHeading[]} */
+  const items = []
+  ed.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'heading') return
+    const level = Number(node.attrs.level) || 1
+    const text = String(node.textContent || '').trim() || '（无标题）'
+    items.push({
+      id: `h-${pos}-${level}`,
+      level,
+      text,
+      pos,
+    })
+  })
+  publishDocumentOutline(items)
+}
+
+/** 源码模式：从 Markdown 文本解析 ATX 标题 */
+function publishOutlineFromSource(markdown) {
+  if (!filePath.value) {
+    publishDocumentOutline([])
+    return
+  }
+  const lines = String(markdown ?? '').split('\n')
+  /** @type {import('../editor/shellEvents').OutlineHeading[]} */
+  const items = []
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = /^(#{1,6})\s+(.+?)\s*$/.exec(lines[i])
+    if (!m) continue
+    const level = m[1].length
+    const text = m[2].replace(/\s+#+\s*$/, '').trim() || '（无标题）'
+    items.push({
+      id: `src-${i + 1}-${level}`,
+      level,
+      text,
+      pos: -1,
+      line: i + 1,
+    })
+  }
+  publishDocumentOutline(items)
+}
+
+function refreshOutline() {
+  if (!filePath.value) {
+    publishDocumentOutline([])
+    return
+  }
+  if (viewMode.value === 'source') {
+    publishOutlineFromSource(content.value)
+    return
+  }
+  if (editorReady.value) {
+    publishOutlineFromEditor(editor.value)
+  } else {
+    publishOutlineFromSource(content.value)
+  }
+}
+
+function scrollToHeading({ pos, line }) {
+  if (viewMode.value === 'source') {
+    const ta = sourceTextarea.value
+    if (!ta || !line || line < 1) return
+    const lines = (content.value ?? '').split('\n')
+    let offset = 0
+    for (let i = 0; i < line - 1 && i < lines.length; i += 1) {
+      offset += lines[i].length + 1
+    }
+    ta.focus()
+    ta.setSelectionRange(offset, offset)
+    const lineHeight =
+      Number.parseFloat(getComputedStyle(ta).lineHeight) || 20
+    ta.scrollTop = Math.max(0, (line - 1) * lineHeight - ta.clientHeight / 3)
+    syncSourceGutterScroll()
+    return
+  }
+
+  const ed = editor.value
+  if (!ed || ed.isDestroyed || typeof pos !== 'number' || pos < 0) return
+  const max = ed.state.doc.content.size
+  const safePos = Math.min(Math.max(pos, 0), max)
+  ed.chain()
+    .focus()
+    .setTextSelection(Math.min(safePos + 1, max))
+    .run()
+  const dom = ed.view.nodeDOM(safePos)
+  if (!(dom instanceof HTMLElement)) return
+  const scroller =
+    dom.closest('.tiptap-host') || ed.view.dom.parentElement
+  if (scroller instanceof HTMLElement) {
+    const domRect = dom.getBoundingClientRect()
+    const scRect = scroller.getBoundingClientRect()
+    const nextTop =
+      scroller.scrollTop + (domRect.top - scRect.top) - scroller.clientHeight * 0.12
+    scroller.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
+  } else {
+    dom.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
 
 const sourceTextarea = ref(null)
 const sourceGutter = ref(null)
@@ -92,6 +202,7 @@ function syncSourceGutterScroll() {
 function onSourceTextareaInput(event) {
   content.value = event.target.value
   dirty.value = true
+  publishOutlineFromSource(content.value)
 }
 
 function pullFromEditor() {
@@ -122,12 +233,14 @@ async function setViewMode(mode) {
 
   if (mode === 'source') {
     viewMode.value = mode
+    publishOutlineFromSource(content.value)
     return
   }
 
   viewMode.value = mode
   await nextTick()
   syncEditorValue(content.value)
+  refreshOutline()
 }
 
 async function loadFile() {
@@ -139,6 +252,7 @@ async function loadFile() {
       editor.value.commands.setContent('', { emitUpdate: false })
       applyingValue = false
     }
+    publishDocumentOutline([])
     return
   }
 
@@ -157,17 +271,23 @@ async function loadFile() {
       // useEditor 可能尚未就绪
       if (editorReady.value) {
         syncEditorValue(data.content)
+        publishOutlineFromEditor(editor.value)
       } else {
         const stop = watch(editorReady, (ready) => {
           if (!ready || token !== loadToken) return
           syncEditorValue(data.content)
+          publishOutlineFromEditor(editor.value)
           stop()
         })
+        publishOutlineFromSource(data.content)
       }
+    } else {
+      publishOutlineFromSource(data.content)
     }
   } catch (err) {
     if (token !== loadToken) return
     error.value = err.message
+    publishDocumentOutline([])
   } finally {
     if (token === loadToken) loading.value = false
   }
@@ -225,6 +345,7 @@ watch(
 )
 
 let stopSaveCurrent = null
+let stopScrollHeading = null
 
 onMounted(() => {
   loadFile()
@@ -239,6 +360,7 @@ onMounted(() => {
   stopSaveCurrent = onSaveCurrentFileRequest(async () => {
     await saveFile(true)
   })
+  stopScrollHeading = onScrollToHeadingRequest(scrollToHeading)
 })
 
 onUnmounted(() => {
@@ -247,6 +369,9 @@ onUnmounted(() => {
   stopReload = null
   stopSaveCurrent?.()
   stopSaveCurrent = null
+  stopScrollHeading?.()
+  stopScrollHeading = null
+  publishDocumentOutline([])
   if (dirty.value && filePath.value) {
     pullFromEditor()
     const path = filePath.value

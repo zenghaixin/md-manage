@@ -228,3 +228,76 @@ export function notifyRightPanelOpened(): void {
     }
   }
 }
+
+/** 文档大纲标题项（由编辑器从当前文档提取） */
+export type OutlineHeading = {
+  id: string
+  level: number
+  text: string
+  /** ProseMirror 文档位置；源码模式可用 line 兜底 */
+  pos: number
+  /** 源码模式：1-based 行号 */
+  line?: number
+}
+
+export type ScrollToHeadingPayload = {
+  pos: number
+  line?: number
+}
+
+let currentOutline: OutlineHeading[] = []
+const outlineHandlers = new Set<Handler<OutlineHeading[]>>()
+const scrollToHeadingHandlers = new Set<Handler<ScrollToHeadingPayload>>()
+
+/** 编辑器发布当前文档大纲；侧栏订阅展示 */
+export function publishDocumentOutline(headings: OutlineHeading[]): void {
+  currentOutline = Array.isArray(headings) ? headings : []
+  for (const handler of Array.from(outlineHandlers)) {
+    try {
+      handler(currentOutline)
+    } catch (err) {
+      console.warn('[shellEvents] outline handler failed:', err)
+    }
+  }
+}
+
+export function getDocumentOutline(): OutlineHeading[] {
+  return currentOutline
+}
+
+/** 侧栏注册；返回取消函数。注册时立即推送当前缓存。 */
+export function onDocumentOutlineChanged(
+  handler: Handler<OutlineHeading[]>,
+): () => void {
+  outlineHandlers.add(handler)
+  try {
+    handler(currentOutline)
+  } catch (err) {
+    console.warn('[shellEvents] outline handler failed:', err)
+  }
+  return () => {
+    outlineHandlers.delete(handler)
+  }
+}
+
+/** 侧栏点击大纲项 → 编辑器滚动并定位 */
+export function requestScrollToHeading(payload: ScrollToHeadingPayload): void {
+  if (payload == null || typeof payload.pos !== 'number') return
+  for (const handler of Array.from(scrollToHeadingHandlers)) {
+    try {
+      handler(payload)
+    } catch (err) {
+      console.warn('[shellEvents] scroll-to-heading handler failed:', err)
+    }
+  }
+}
+
+/** MarkdownEditor 注册 */
+export function onScrollToHeadingRequest(
+  handler: Handler<ScrollToHeadingPayload>,
+): () => void {
+  scrollToHeadingHandlers.add(handler)
+  return () => {
+    scrollToHeadingHandlers.delete(handler)
+  }
+}
