@@ -1,4 +1,4 @@
-import { Extension, Editor } from '@tiptap/core'
+﻿import { Extension, Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { Markdown } from '@tiptap/markdown'
 import {
@@ -10,15 +10,15 @@ import {
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import { marked } from 'marked'
-import { api } from '../../../api'
-import { useGlossaryStore } from '../../../stores/glossary'
-import { fromStorageMarkdown, toStorageMarkdown } from '../../../editor/blankLines'
-import { requestReloadFilePath } from '../../../editor/shellEvents'
+import { api } from '../../../../api'
+import { useGlossaryStore } from '../../../../stores/glossary'
+import { fromStorageMarkdown, toStorageMarkdown } from '../../../blankLines'
+import { requestReloadFilePath } from '../../../shellEvents'
 import {
   alertError,
   confirmAction,
   confirmChoice,
-} from '../../../composables/useDialog'
+} from '../../../../composables/useDialog'
 import {
   TERM_GLOSSARY_ID,
   TERM_NODE_NAME,
@@ -28,9 +28,14 @@ import {
   TERM_REF_INVALID_CLASS,
   TERM_REF_NODE_NAME,
   TERM_POPOVER_CLASS,
-  TERM_PICKER_CLASS,
 } from './constants'
 import { termDashClass } from './dash'
+import {
+  KEY_PICKER_CLASS,
+  KeyPicker,
+  type KeyPickerAnchor,
+  type KeyPickerSecondary,
+} from '../../../components/key-picker'
 
 import { setActiveTermEditorView, setHostTermTitle } from './editorViewRef'
 import { ensureTermGlossaryStyles } from './styles'
@@ -146,6 +151,7 @@ async function offerCreateMissingTerm(
       title,
       description: '',
       sourcePath: '',
+      type: 'basic',
       ignoreContexts: [],
       formerTitles: [],
       pendingManualConfirm: [],
@@ -157,7 +163,10 @@ async function offerCreateMissingTerm(
       const type = view.state.schema.nodes[TERM_NODE_NAME]
       const paragraph = view.state.schema.nodes.paragraph
       if (type && paragraph) {
-        const node = type.create({ title }, paragraph.create())
+        const node = type.create(
+          { title, termType: 'basic' },
+          paragraph.create(),
+        )
         const tr = view.state.tr.insert(view.state.doc.content.size, node)
         view.dispatch(tr.scrollIntoView())
       }
@@ -416,7 +425,7 @@ class TermDialog {
   /** 用户是否已手动拖过尺寸；未拖过则高度随内容自适应 */
   private userSized = false
   /** 弹窗内灰线候选选择器 */
-  private dialogPicker: TermConfirmPicker | null = null
+  private dialogPicker: KeyPicker | null = null
 
   constructor(
     title: string,
@@ -841,7 +850,7 @@ class TermDialog {
           .split('\u0001')
           .map((s) => s.trim())
           .filter(Boolean)
-        if (!this.dialogPicker) this.dialogPicker = new TermConfirmPicker()
+        if (!this.dialogPicker) this.dialogPicker = new KeyPicker()
         this.dialogPicker.show({
           anchor: candidate,
           label: '确认是否为词条',
@@ -1030,6 +1039,7 @@ class TermDialog {
           title: newTitle,
           description: newDescription.trim(),
           sourcePath: '',
+          type: prev?.type || 'basic',
           ignoreContexts: prev?.ignoreContexts || [],
           formerTitles: prev?.formerTitles || [],
           pendingManualConfirm: prev?.pendingManualConfirm || [],
@@ -1362,204 +1372,6 @@ class TermDialogManager {
 
 type FormerPickerAction = 'switch' | 'once' | 'never'
 
-type TermConfirmPickerAnchor =
-  | HTMLElement
-  | { left: number; top: number; bottom: number; right: number }
-
-type TermConfirmPickerSecondary = {
-  /** 展示与快捷键（Esc 仅展示，实际由 Escape 键处理） */
-  key: string
-  label: string
-  onSelect: () => void
-}
-
-type TermConfirmPickerShowOptions = {
-  anchor: TermConfirmPickerAnchor
-  label: string
-  titles: string[]
-  onPick: (title: string) => void
-  /** 额外底部操作（如曾用名的 0 保存原样 / - 忽略）；Esc 取消始终存在 */
-  secondary?: TermConfirmPickerSecondary[]
-  promptKey?: string
-  onDismiss?: () => void
-}
-
-/**
- * 统一确认弹窗：1–9 选词条，Esc 取消；可选底部次要操作（曾用名 once/never）。
- */
-class TermConfirmPicker {
-  private el: HTMLDivElement | null = null
-  private onKeyDown: ((e: KeyboardEvent) => void) | null = null
-  private promptKey = ''
-
-  get isOpen() {
-    return !!this.el
-  }
-
-  get currentKey() {
-    return this.promptKey
-  }
-
-  hide() {
-    if (this.onKeyDown) {
-      document.removeEventListener('keydown', this.onKeyDown, true)
-      this.onKeyDown = null
-    }
-    this.el?.remove()
-    this.el = null
-    this.promptKey = ''
-  }
-
-  show(opts: TermConfirmPickerShowOptions) {
-    this.hide()
-    const list = opts.titles.filter(Boolean)
-    if (!list.length) return
-
-    this.promptKey = opts.promptKey || ''
-    const el = document.createElement('div')
-    el.className = TERM_PICKER_CLASS
-    el.setAttribute('data-extension', TERM_GLOSSARY_ID)
-
-    const label = document.createElement('div')
-    label.className = 'ext-term-picker-label'
-    label.textContent = opts.label
-    el.appendChild(label)
-
-    const pickRuns: Array<() => void> = []
-    const listEl = document.createElement('div')
-    listEl.className = 'ext-term-picker-list'
-    list.forEach((title, i) => {
-      const idx = i + 1
-      const btn = document.createElement('button')
-      btn.type = 'button'
-      btn.className = 'ext-term-picker-item'
-      btn.innerHTML = `<span class="ext-term-picker-hotkey">${idx}:</span><span>「${escapeHtml(title)}」</span>`
-      const pick = () => {
-        this.hide()
-        opts.onPick(title)
-      }
-      pickRuns.push(pick)
-      btn.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        pick()
-      })
-      listEl.appendChild(btn)
-    })
-    el.appendChild(listEl)
-
-    const dismiss = () => {
-      this.hide()
-      opts.onDismiss?.()
-    }
-
-    const secondaryRuns = new Map<string, () => void>()
-    const foot = document.createElement('div')
-    foot.className = 'ext-term-picker-foot'
-    for (const item of opts.secondary || []) {
-      const run = () => {
-        this.hide()
-        item.onSelect()
-      }
-      secondaryRuns.set(item.key, run)
-      if (item.key === '-') secondaryRuns.set('_', run)
-      const btn = document.createElement('button')
-      btn.type = 'button'
-      btn.className = 'ext-term-picker-item is-muted'
-      btn.innerHTML = `<span class="ext-term-picker-hotkey">${escapeHtml(item.key)}:</span><span>${escapeHtml(item.label)}</span>`
-      btn.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        run()
-      })
-      foot.appendChild(btn)
-    }
-    const cancelBtn = document.createElement('button')
-    cancelBtn.type = 'button'
-    cancelBtn.className = 'ext-term-picker-item is-muted'
-    cancelBtn.innerHTML =
-      '<span class="ext-term-picker-hotkey">Esc:</span><span>取消</span>'
-    cancelBtn.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      dismiss()
-    })
-    foot.appendChild(cancelBtn)
-    el.appendChild(foot)
-
-    document.body.appendChild(el)
-    this.el = el
-    positionPicker(el, opts.anchor)
-    this.bindKeys(pickRuns, secondaryRuns, dismiss)
-  }
-
-  private bindKeys(
-    pickRuns: Array<() => void>,
-    secondaryRuns: Map<string, () => void>,
-    dismiss: () => void,
-  ) {
-    this.onKeyDown = (e: KeyboardEvent) => {
-      if (!this.el) return
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        e.stopPropagation()
-        dismiss()
-        return
-      }
-      const secondary = secondaryRuns.get(e.key)
-      if (secondary) {
-        e.preventDefault()
-        e.stopPropagation()
-        secondary()
-        return
-      }
-      if (e.key >= '1' && e.key <= '9') {
-        const i = Number(e.key) - 1
-        if (i >= 0 && i < pickRuns.length) {
-          e.preventDefault()
-          e.stopPropagation()
-          pickRuns[i]()
-        }
-      }
-    }
-    document.addEventListener('keydown', this.onKeyDown, true)
-  }
-
-  destroy() {
-    this.hide()
-  }
-}
-
-function positionPicker(
-  el: HTMLElement,
-  anchor:
-    | HTMLElement
-    | { left: number; top: number; bottom: number; right: number },
-) {
-  const rect =
-    anchor instanceof HTMLElement
-      ? anchor.getBoundingClientRect()
-      : {
-          left: anchor.left,
-          right: anchor.right,
-          top: anchor.top,
-          bottom: anchor.bottom,
-        }
-  const pad = 6
-  let left = rect.left
-  let top = rect.bottom + pad
-  requestAnimationFrame(() => {
-    const w = el.offsetWidth
-    const h = el.offsetHeight
-    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8
-    if (left < 8) left = 8
-    if (top + h > window.innerHeight - 8) top = rect.top - h - pad
-    if (top < 8) top = 8
-    el.style.left = `${Math.round(left)}px`
-    el.style.top = `${Math.round(top)}px`
-  })
-}
-
 /**
  * 正文 / 词条描述：已确认引用节点高亮；未确认灰线候选；空格 / term[] 自动确认。
  */
@@ -1572,7 +1384,7 @@ export const TermGlossaryHighlight = Extension.create({
 
   addProseMirrorPlugins() {
     const manager = new TermDialogManager()
-    const picker = new TermConfirmPicker()
+    const picker = new KeyPicker()
 
     const hideUi = () => {
       picker.hide()
@@ -1580,7 +1392,7 @@ export const TermGlossaryHighlight = Extension.create({
 
     const formerSecondary = (
       onAction: (action: FormerPickerAction, title?: string) => void,
-    ): TermConfirmPickerSecondary[] => [
+    ): KeyPickerSecondary[] => [
       {
         key: '0',
         label: '保存原样',
@@ -1594,7 +1406,7 @@ export const TermGlossaryHighlight = Extension.create({
     ]
 
     const showCandidateConfirm = (
-      anchor: TermConfirmPickerAnchor,
+      anchor: KeyPickerAnchor,
       titles: string[],
       onPick: (title: string) => void,
       promptKey = '',
@@ -1607,11 +1419,12 @@ export const TermGlossaryHighlight = Extension.create({
         onPick,
         promptKey,
         onDismiss,
+        sourceId: TERM_GLOSSARY_ID,
       })
     }
 
     const showFormerConfirm = (
-      anchor: TermConfirmPickerAnchor,
+      anchor: KeyPickerAnchor,
       formerTitle: string,
       currentTitles: string[],
       onAction: (action: FormerPickerAction, title?: string) => void,
@@ -1626,6 +1439,7 @@ export const TermGlossaryHighlight = Extension.create({
         secondary: formerSecondary(onAction),
         promptKey,
         onDismiss,
+        sourceId: TERM_GLOSSARY_ID,
       })
     }
 
@@ -2111,7 +1925,7 @@ export const TermGlossaryHighlight = Extension.create({
             mousedown: (_view, event) => {
               const t = event.target as HTMLElement | null
               if (
-                t?.closest?.(`.${TERM_PICKER_CLASS}`) ||
+                t?.closest?.(`.${KEY_PICKER_CLASS}`) ||
                 t?.closest?.('.ext-selection-bubble')
               ) {
                 return false
@@ -2119,7 +1933,7 @@ export const TermGlossaryHighlight = Extension.create({
               if (
                 !t?.closest?.(`.${TERM_REF_CANDIDATE_CLASS}`) &&
                 !t?.closest?.(`.${TERM_REF_FORMER_CLASS}`) &&
-                !t?.closest?.(`.${TERM_PICKER_CLASS}`)
+                !t?.closest?.(`.${KEY_PICKER_CLASS}`)
               ) {
                 picker.hide()
               }
@@ -2129,7 +1943,7 @@ export const TermGlossaryHighlight = Extension.create({
               const target = event.target as HTMLElement | null
               if (target?.closest?.('.ext-term-ref-close')) return false
               if (target?.closest?.(`.${TERM_POPOVER_CLASS}`)) return false
-              if (target?.closest?.(`.${TERM_PICKER_CLASS}`)) return false
+              if (target?.closest?.(`.${KEY_PICKER_CLASS}`)) return false
 
               const formerEl = target?.closest?.(
                 `.${TERM_REF_FORMER_CLASS}`,
@@ -2280,7 +2094,7 @@ export const TermGlossaryHighlight = Extension.create({
           const onDocClick = (e: MouseEvent) => {
             const t = e.target as HTMLElement | null
             if (
-              t?.closest?.(`.${TERM_PICKER_CLASS}`) ||
+              t?.closest?.(`.${KEY_PICKER_CLASS}`) ||
               t?.closest?.('.ext-selection-bubble') ||
               t?.closest?.(`.${TERM_REF_CANDIDATE_CLASS}`)
             ) {

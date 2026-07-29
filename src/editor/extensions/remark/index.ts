@@ -1,7 +1,9 @@
 /**
  * 备注扩展：选区气泡「备注」+ 右侧卡片 + remark(id)[文本] 落库。
+ * 整块目标（词条等）另挂节点 attrs：`{remark:id}`。
  */
 import type { MarkdownExtension } from '../types'
+import { collectLiveRemarkIds } from './apply'
 import { RemarkBridgeExtension } from './bridgeExtension'
 import { REMARK_EXTENSION_ID, REMARK_NODE_NAME } from './constants'
 import { RemarkNode } from './node'
@@ -33,17 +35,9 @@ const remarkExtension: MarkdownExtension = {
   },
 
   transformToStorage(markdown: string) {
-    // 裁剪正文中已不存在的 id
     const view = getRemarkEditorView()
     if (view && !view.isDestroyed) {
-      const live = new Set<string>()
-      view.state.doc.descendants((node) => {
-        if (node.type.name === REMARK_NODE_NAME) {
-          const id = String(node.attrs.id || '').trim()
-          if (id) live.add(id)
-        }
-      })
-      pruneRemarkDescriptions(live)
+      pruneRemarkDescriptions(collectLiveRemarkIds(view.state.doc))
     }
     return saveRemarksIntoMarkdown(markdown)
   },

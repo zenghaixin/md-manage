@@ -5,7 +5,7 @@
  * 注意：@tiptap/pm/view 导出的是 Decoration / DecorationSet，没有 Decorations。
  */
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { registerSelectionAction } from '../../../components/selection-actions'
 import { requestOpenRightPanel } from '../../../editor/shellEvents'
@@ -18,6 +18,11 @@ import {
   setRemarkEditorView,
   syncRemarkPanelVisibility,
 } from './bridge'
+import {
+  findBlockRemarkTargetAt,
+  getBlockRemarkTarget,
+  getNodeBlockRemarkId,
+} from './blockTargets'
 import { REMARK_NODE_NAME, REMARK_PANEL_MODULE_ID } from './constants'
 import { isRemarkBoundaryExited } from './node'
 import { ensureRemarkStyles } from './styles'
@@ -32,7 +37,10 @@ function bindSelectionAction() {
     id: 'remark.add',
     label: '备注',
     order: 20,
-    isVisible: (ctx) => !!ctx.text.trim(),
+    isVisible: (ctx) => {
+      if (ctx.text.trim()) return true
+      return !!findBlockRemarkTargetAt(ctx.view.state.doc, ctx.from, ctx.to)
+    },
     run: (ctx) => {
       const id = applyRemarkToSelection(ctx.view, {
         from: ctx.from,
@@ -50,9 +58,15 @@ function findActiveRemarkRange(state: import('@tiptap/pm/state').EditorState): {
   from: number
   to: number
 } | null {
-  // 箭头退出边界后：不视为正在编辑，不加背景高亮
   if (isRemarkBoundaryExited(state)) return null
-  const { $from, empty } = state.selection
+  const { selection } = state
+  if (selection instanceof NodeSelection) {
+    const blockId = getNodeBlockRemarkId(selection.node)
+    if (blockId) {
+      return { from: selection.from, to: selection.to }
+    }
+  }
+  const { $from, empty } = selection
   if (!empty) return null
   for (let d = $from.depth; d > 0; d -= 1) {
     if ($from.node(d).type.name !== REMARK_NODE_NAME) continue
@@ -80,12 +94,22 @@ function buildDecorations(
 
   if (hoverId) {
     state.doc.descendants((node, pos) => {
-      if (node.type.name !== REMARK_NODE_NAME) return
-      if (String(node.attrs.id || '') !== hoverId) return
+      if (node.type.name === REMARK_NODE_NAME) {
+        if (String(node.attrs.id || '') !== hoverId) return
+        if (pos === activeFrom) return
+        decos.push(
+          Decoration.node(pos, pos + node.nodeSize, {
+            class: 'ext-remark-hover',
+          }),
+        )
+        return
+      }
+      if (!getBlockRemarkTarget(node.type.name)) return
+      if (getNodeBlockRemarkId(node) !== hoverId) return
       if (pos === activeFrom) return
       decos.push(
         Decoration.node(pos, pos + node.nodeSize, {
-          class: 'ext-remark-hover',
+          class: 'ext-remark-block-hover',
         }),
       )
     })

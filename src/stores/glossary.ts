@@ -12,9 +12,14 @@ import {
   parseTermMarkdown,
   sanitizeTermTitle,
   type PendingConflictItem,
-} from '../editor/extensions/term-glossary/syntax'
-import { syncSegmenterTitles } from '../editor/extensions/term-glossary/segmenter'
-import { queueTermFlash } from '../editor/extensions/term-glossary/flashTerm'
+} from '../editor/extensions/term-glossary/core/syntax'
+import {
+  normalizeTermType,
+  TERM_TYPE_BASIC,
+  type TermTypeId,
+} from '../editor/extensions/term-glossary/core/termTypes'
+import { syncSegmenterTitles } from '../editor/extensions/term-glossary/core/segmenter'
+import { queueTermFlash } from '../editor/extensions/term-glossary/core/flashTerm'
 
 export type { PendingConflictItem }
 
@@ -22,6 +27,8 @@ export interface GlossaryTerm {
   title: string
   description: string
   sourcePath: string
+  /** 词条类型；缺省 / 旧数据 = basic */
+  type: TermTypeId
   ignoreContexts: string[]
   /** 曾用名：仅提示，不自动改文案 */
   formerTitles: string[]
@@ -44,6 +51,7 @@ function normalizeTerm(raw: Partial<GlossaryTerm> & { title?: string }): Glossar
     title,
     description: String(raw.description ?? ''),
     sourcePath: String(raw.sourcePath ?? ''),
+    type: normalizeTermType(raw.type),
     ignoreContexts: normalizeIgnoreContexts(raw.ignoreContexts),
     formerTitles: normalizeFormerTitles(raw.formerTitles).filter((f) => f !== title),
     pendingManualConfirm: normalizePendingManualConfirm(raw.pendingManualConfirm),
@@ -58,6 +66,7 @@ function scrubIgnoreContexts(
   for (const [key, term] of Object.entries(terms)) {
     next[key] = {
       ...term,
+      type: normalizeTermType(term.type),
       // 允许 ignore === 自身标题（点 × 且两侧无邻字时）；剔除指向其它词条标题的脏数据
       ignoreContexts: (term.ignoreContexts || []).filter(
         (c) => c === key || !titles.has(c),
@@ -186,11 +195,50 @@ export const useGlossaryStore = defineStore('glossary', {
         title: to,
         description,
         sourcePath: sourcePath || prev?.sourcePath || '',
+        type: normalizeTermType(prev?.type),
         ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
         formerTitles: former,
         pendingManualConfirm: [],
       }
       return scrubIgnoreContexts(terms)
+    },
+
+    /**
+     * 首次写下标题或插入时写入类型；已有词条则更新 type（不改描述）。
+     */
+    async upsertTermType(
+      title: string,
+      termType: TermTypeId | string,
+      sourcePath = '',
+    ) {
+      const key = sanitizeTermTitle(title)
+      if (!key) return
+      const type = normalizeTermType(termType)
+      const prev = this.terms[key]
+      const terms: Record<string, GlossaryTerm> = {
+        ...this.terms,
+        [key]: prev
+          ? { ...prev, type }
+          : {
+              title: key,
+              description: '',
+              sourcePath: String(sourcePath || ''),
+              type,
+              ignoreContexts: [],
+              formerTitles: [],
+              pendingManualConfirm: [],
+            },
+      }
+      await this.persistTerms(terms)
+    },
+
+    /** 删除词条条目（定义块删除时调用） */
+    async removeTerm(title: string) {
+      const key = sanitizeTermTitle(title) || String(title ?? '').trim()
+      if (!key || !this.terms[key]) return
+      const terms: Record<string, GlossaryTerm> = { ...this.terms }
+      delete terms[key]
+      await this.persistTerms(terms)
     },
 
     /** 冲突处理完毕：清空 pending，恢复自动确认 */

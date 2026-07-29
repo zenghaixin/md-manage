@@ -8,17 +8,53 @@ const STYLE_ATTR = 'data-ext-style'
 
 export const TERM_GLOSSARY_STYLES = `
 .ext-term-node {
+  position: relative;
   display: block;
   margin: 0.35em 0 16px;
-  padding-left: 0.55em;
+  padding: 0.15em 2.5rem 0.15em 0.55em;
   border-left: 2px solid color-mix(in srgb, currentColor 28%, transparent);
-  cursor: default;
+  cursor: pointer;
 }
 
 .ext-term-node.is-selected {
   background: color-mix(in srgb, #3b82f6 12%, transparent);
   border-left-color: #3b82f6;
   border-radius: 4px;
+}
+
+.ext-term-actions {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.2rem;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.ext-term-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted, #5a6b75);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ext-term-action-btn:hover {
+  color: #2563eb;
+}
+
+.ext-term-action-btn.is-danger:hover {
+  color: #dc2626;
 }
 
 .ext-term-node.is-flash {
@@ -77,13 +113,37 @@ html.dark .ext-term-node.is-flash,
   display: block;
 }
 
+.ext-term-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.15em;
+}
+
+.ext-term-type-badge {
+  flex-shrink: 0;
+  padding: 0.05em 0.4em;
+  border: 1px solid color-mix(in srgb, var(--accent, #0d6e6e) 40%, var(--border, #c5d0d8));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft, #d4ecec) 80%, transparent);
+  color: var(--accent, #0d6e6e);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  user-select: none;
+  pointer-events: none;
+}
+
 .ext-term-label {
   display: none;
 }
 
 .ext-term-title {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  width: auto;
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -95,13 +155,8 @@ html.dark .ext-term-node.is-flash,
   outline: none;
   min-height: 1.2em;
   line-height: inherit;
-  cursor: text;
-}
-
-.ext-term-title::placeholder {
-  color: var(--muted, #94a3b8);
-  font-weight: 500;
-  opacity: 1;
+  cursor: pointer;
+  user-select: none;
 }
 
 .ext-term-desc {
@@ -110,7 +165,9 @@ html.dark .ext-term-node.is-flash,
   min-height: 1.2em;
   font-weight: inherit;
   color: inherit;
-  cursor: text;
+  cursor: pointer;
+  user-select: none;
+  caret-color: transparent;
 }
 
 .ext-term-desc > p {
@@ -302,118 +359,6 @@ html.dark .ext-term-dash--former,
 .ext-term-ref.ext-term-dash--invalid .ext-term-ref-close:hover {
   background: #dc2626;
   color: #fff;
-}
-
-.ext-term-picker-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin-top: 0.35rem;
-  padding-top: 0.35rem;
-  border-top: 1px solid color-mix(in srgb, var(--border, #c5d0d8) 80%, transparent);
-}
-
-.ext-term-picker-action {
-  display: block;
-  width: 100%;
-  margin: 0;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border, #c5d0d8);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.75rem;
-  text-align: left;
-}
-
-.ext-term-picker-action:hover {
-  background: color-mix(in srgb, var(--ink, #1a2830) 6%, transparent);
-}
-
-.ext-term-picker {
-  position: fixed;
-  z-index: 10020;
-  min-width: 140px;
-  max-width: 280px;
-  padding: 0.35rem 0.4rem;
-  border: 1px solid var(--border, #c5d0d8);
-  border-radius: 8px;
-  background: var(--surface, #f4f7f9);
-  color: var(--ink, #1a2830);
-  box-shadow: 0 10px 28px rgba(26, 40, 48, 0.16);
-  font-size: 0.75rem;
-}
-
-.ext-term-picker-label {
-  padding: 0.1rem 0.25rem 0.3rem;
-  color: var(--muted, #5a6b75);
-  font-size: 0.6875rem;
-}
-
-.ext-term-picker-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-
-.ext-term-picker-item {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  width: 100%;
-  margin: 0;
-  padding: 0.25rem 0.35rem;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.75rem;
-  line-height: 1.3;
-}
-
-.ext-term-picker-item.is-muted {
-  color: var(--muted, #5a6b75);
-}
-
-.ext-term-picker-item:hover {
-  background: color-mix(in srgb, #2563eb 12%, transparent);
-  color: #2563eb;
-}
-
-.ext-term-picker-hotkey {
-  flex: 0 0 auto;
-  min-width: 0;
-  margin-right: 0;
-  color: inherit;
-  font-size: inherit;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.75;
-}
-
-.ext-term-picker-foot {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 0.15rem;
-  margin-top: 0.3rem;
-  padding-top: 0.3rem;
-  border-top: 1px solid color-mix(in srgb, var(--border, #c5d0d8) 80%, transparent);
-}
-
-.ext-term-picker-foot .ext-term-picker-item {
-  width: auto;
-  flex: 0 0 auto;
-  padding: 0.15rem 0.3rem;
-  white-space: nowrap;
-  font-size: 0.6875rem;
 }
 
 .ext-term-not-term {
@@ -846,9 +791,7 @@ html.dark .ext-term-dash--candidate,
   --term-dash-hover: #94a3b8;
 }
 
-html.dark .ext-term-picker,
 html.dark .ext-term-not-term,
-[data-theme='dark'] .ext-term-picker,
 [data-theme='dark'] .ext-term-not-term {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
 }

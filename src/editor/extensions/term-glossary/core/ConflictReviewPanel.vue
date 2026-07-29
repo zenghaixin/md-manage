@@ -1,14 +1,14 @@
-<script setup>
+﻿<script setup>
 /**
  * 词条冲突审查面板（右栏模块内容）
  * 按词条分组卡片：组内工具栏 + 懒加载列表；减少横线干扰。
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { api } from '../../../api'
-import { useGlossaryStore } from '../../../stores/glossary'
-import { requestOpenFilePath, requestReloadFilePath } from '../../../editor/shellEvents'
-import { notifyRightPanelModulesChanged } from '../../../editor/rightPanelRegistry'
-import { alertInfo } from '../../../composables/useDialog'
+import { api } from '../../../../api'
+import { useGlossaryStore } from '../../../../stores/glossary'
+import { requestOpenFilePath, requestReloadFilePath } from '../../../shellEvents'
+import { notifyRightPanelModulesChanged } from '../../../rightPanelRegistry'
+import { alertInfo } from '../../../../composables/useDialog'
 import { buildShortIgnoreContext } from './segmenter'
 
 /** @typedef {import('./conflictDrawer').ConflictItem} ConflictItem */

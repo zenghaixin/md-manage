@@ -64,10 +64,6 @@ export const SelectionActionsExtension = Extension.create({
                   return
                 }
                 const text = view.state.doc.textBetween(from, to, '\n')
-                if (!text.trim()) {
-                  bubble.hide()
-                  return
-                }
                 const coords = selectionCoords(view, from, to)
                 if (!coords) {
                   bubble.hide()

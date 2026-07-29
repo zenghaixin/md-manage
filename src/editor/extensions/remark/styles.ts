@@ -25,6 +25,20 @@ const CSS = `
   -webkit-box-decoration-break: clone;
   padding: 0 0.08em;
 }
+
+/* 右栏备注卡片 hover：整块词条边框高亮（含标题） */
+.md-editor .tiptap-prose .ext-term-node:has(.ext-remark.ext-remark-hover),
+.md-editor .tiptap-prose .ext-term-node.ext-remark-block-hover,
+.md-editor .tiptap-prose .ext-term-node.ext-remark-active {
+  outline: 2px solid color-mix(in srgb, #ca8a04 75%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.md-editor .tiptap-prose .ext-term-node:has(.ext-remark.ext-remark-hover) .ext-remark.ext-remark-hover {
+  background: transparent;
+  padding: 0;
+}
 `
 
 export function ensureRemarkStyles(): void {

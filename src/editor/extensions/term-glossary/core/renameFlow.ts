@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 词条改名统一流程：
  * 1) 禁止自动确认（内存）+ 清空 pending，等扫描写入
  * 2) 当前编辑器内同步 termRef 旧名→新名
@@ -6,12 +6,12 @@
  * 4) 全库磁盘同步 term[旧/曾用名]→term[新] 并扫描冲突写入 pending
  * 5) 有冲突则询问后打开抽屉
  */
-import { useGlossaryStore } from '../../../stores/glossary'
+import { useGlossaryStore } from '../../../../stores/glossary'
 import {
   requestReloadFilePath,
   requestSaveCurrentFile,
-} from '../../../editor/shellEvents'
-import { alertError } from '../../../composables/useDialog'
+} from '../../../shellEvents'
+import { alertError } from '../../../../composables/useDialog'
 import {
   clearAutoConfirmSuppress,
   suppressAutoConfirmForTitle,
@@ -20,7 +20,7 @@ import { rewriteOpenEditorTermRefs, openEditorHasInlineTermRef } from './renameR
 import { sanitizeTermTitle } from './syntax'
 import { runRenameSyncAndOpenDrawer } from './conflictDrawer'
 import { getActiveTermEditorView } from './editorViewRef'
-import { api } from '../../../api'
+import { api } from '../../../../api'
 
 export interface CommitTermRenameOptions {
   oldTitle: string

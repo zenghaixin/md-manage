@@ -1,8 +1,8 @@
-/**
+﻿/**
  * 已确认行内引用：编辑区显示标题高亮；落库为 ` term[标题] `。
  */
 import { Node, mergeAttributes } from '@tiptap/core'
-import { useGlossaryStore } from '../../../stores/glossary'
+import { useGlossaryStore } from '../../../../stores/glossary'
 import {
   TERM_GLOSSARY_ID,
   TERM_REF_CLASS,

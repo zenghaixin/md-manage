@@ -9,13 +9,54 @@
 4. 关键算法用简明中文注释。
 5. 新功能经扩展钩子与壳事件接入，不硬改 MarkdownEditor / DocsPage / main。
 
+# Architecture：壳 vs 扩展（必读）
+
+## 核心壳（尽量少改）
+- `src/components/MarkdownEditor.vue`
+- `src/pages/DocsPage.vue`
+- `src/main.js`
+- `src/editor/shellEvents.ts`（壳事件总线：打开文件、保存、右栏开关等）
+- `src/editor/rightPanelRegistry.ts`（右侧书签模块注册）
+- `src/components/OpsSidePanel.vue` / `FileSidebar.vue` 等布局壳
+
+壳只提供：布局、文件树、编辑器挂载、右栏宿主、通用事件。
+**禁止**在壳里 `import` 具体业务扩展实现（如 `term-glossary/*`、`remark/*`、未来的 AI/图谱模块）。
+
+## 自定义 / 业务功能写哪里
+- **Markdown 自定义语法、编辑态行为、落盘变换** → `src/editor/extensions/<extension-id>/`
+  - 入口：`index.ts` 导出符合 `MarkdownExtension` 的对象
+  - 在 `src/editor/extensions/index.ts` 里 `registerExtension(...)` 注册
+  - 参考：`term-glossary/`、`remark/`
+- **右侧功能区面板** → 扩展内实现 UI，经 `rightPanelRegistry` 注册书签；需要打开右栏时用 `shellEvents.requestOpenRightPanel`
+- **跨组件协作**（打开某文件、强制保存、定位标题等）→ 优先扩 `shellEvents`，由壳注册监听；不要把扩展 import 进 DocsPage
+- **编辑器通用 UI 宿主**（快捷键气泡等，与具体扩展无关）→ `src/editor/components/`（如 `key-picker/`）；扩展只传内容与回调；勿与 `src/components/` 应用壳混淆
+- **应用级偏好**（主题、右栏上次模块）→ `.app-config.json` + `useAppConfig`；**不是** glossary 数据
+
+## 何时允许改壳
+仅当扩展接口不够用时，做**最小通用能力**补丁，例如：
+- 在 `shellEvents` 增加一类与业务无关的事件
+- 在 `rightPanelRegistry` / hooks 增加通用挂载点
+- 修壳本身的 bug / 布局
+
+业务逻辑、词条规则、备注逻辑、AI 分析、关系图等：**写在 extensions（或独立 feature 目录）**，不堆进 MarkdownEditor / DocsPage。
+
+## 数据文件约定
+- `**/glossary.json`：运行时词库，**gitignore**；新字段靠代码 `normalize` / 默认值，不靠提交该文件传播
+- 扩展落库语法与字段约定写在扩展目录与下文；改字段先改类型与 normalize
+
 # Constraints
 - 除非特别要求，不写无关 Markdown 解释。
 - 禁止 eval 与高危写法。
 - 驼峰命名；Vue 优先 `<script setup>`。
-- 禁止在 MarkdownEditor / DocsPage 中 import 具体扩展（glossary、term-glossary/*）。
+- 禁止在 MarkdownEditor / DocsPage / main 中 import 具体扩展实现。
+- 新增扩展不要绕过 `registerExtension` 私自挂到编辑器。
 
 # Built-in Extension: term-glossary（词条）
+
+## 目录
+- `core/`：共享引擎（语法、匹配、改名、确认、定义块/引用、`type` 字段）；全体词条共用
+- `types/`：特殊词条仅放样式 / 显示内容差异；自定义类型后续再议，且不进核心功能链路
+- 根 `index.ts`：组装注册
 
 ## 落库语法
 ### 定义（有空格）
@@ -47,17 +88,24 @@
   "title": "能量",
   "description": "...",
   "sourcePath": "...",
+  "type": "basic",
   "ignoreContexts": ["恢复能量"],
-  "formerTitles": ["气"]
+  "formerTitles": ["气"],
+  "pendingManualConfirm": []
 }
 ```
+- `type`：`basic`（普通）或 `character` / `faction` / `class` / `skill` / `geo` / `event`；缺省视为 basic
+- 插入：`Mod-Alt-t` → 类型气泡（1–6；底部 esc:普通词条；点外侧取消）→ 右侧「词条」面板定义 → 确认后在当前顶层块下一行插入定义块；取消/关栏丢弃
+- 定义块只读展示；选中后右上角「编辑 / 删除」；编辑进右栏；删除与 Backspace（整块选中）确认后删定义块并移除 glossary 条目
 - 改名：旧名进 `formerTitles`，`ignoreContexts` 清空；已确认 `term[旧]` 全库改为 `term[新]`
 - 曾用名仅提示不自动改；新名撞正文 → 右侧冲突抽屉（批量确认 / 自动或选字 ignore）
 - 新增标题撞他人曾用名 → 确认沿用旧词条或新建（新建则从旧词 formerTitles 删除）
+- `pendingManualConfirm`：改名扫描写入的待人工确认列表；非空时该标题不自动确认；处理完清空
 
 ## 关键文件
-- `segmenter.ts` / `match.ts` / `convert.ts` / `conflictDrawer.ts`
+- `core/`：`segmenter.ts` / `match.ts` / `convert.ts` / `conflictDrawer.ts` 等
 - `stores/glossary.ts`、`server/index.js`（rename-sync / apply-conflicts）
+- 运行时词库：`core/glossary.json`（gitignore）
 
 ## API
 - GET/PUT `/api/glossary`
@@ -65,3 +113,11 @@
 - PATCH `/api/glossary/file`
 - POST `/api/glossary/rename-sync`
 - POST `/api/glossary/apply-conflicts`
+
+# Built-in Extension: remark（正文备注）
+- 目录：`src/editor/extensions/remark/`
+- 右栏备注面板经 `rightPanelRegistry` 挂载；细节以该目录代码为准
+
+# 规划中能力（见 `待处理.md`，未实现勿当已有行为）
+- 词条 `type` + 图标、关系图、事件总览、AI 只读分析等
+- 实现时仍按「扩展 + 右栏模块 + shellEvents」接入，不改壳业务化

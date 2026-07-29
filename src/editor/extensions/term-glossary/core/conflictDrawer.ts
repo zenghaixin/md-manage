@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 改名冲突审查：批量确认词条 / 不是词条。
  * UI 为 Vue + el-collapse，挂载到壳层右侧操作区。
  */
@@ -6,20 +6,20 @@ import { createApp, type App } from 'vue'
 import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { getActivePinia } from 'pinia'
-import { useGlossaryStore } from '../../../stores/glossary'
+import { useGlossaryStore } from '../../../../stores/glossary'
 import {
   requestOpenRightPanel,
   requestCloseRightPanel,
   onRightPanelDismiss,
-} from '../../../editor/shellEvents'
+} from '../../../shellEvents'
 import {
   registerRightPanelModule,
   notifyRightPanelModulesChanged,
-} from '../../../editor/rightPanelRegistry'
+} from '../../../rightPanelRegistry'
 import {
   confirmAction,
   toast,
-} from '../../../composables/useDialog'
+} from '../../../../composables/useDialog'
 import {
   clearAutoConfirmSuppress,
   demoteTermToCandidate,
@@ -28,7 +28,7 @@ import {
 import { ensureTermGlossaryStyles } from './styles'
 import { normalizePendingManualConfirm } from './syntax'
 import ConflictReviewPanel from './ConflictReviewPanel.vue'
-import { api } from '../../../api'
+import { api } from '../../../../api'
 
 export const TERM_CONFLICT_MODULE_ID = 'term-conflict'
 

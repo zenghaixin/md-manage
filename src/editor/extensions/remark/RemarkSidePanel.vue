@@ -9,6 +9,7 @@ import {
   onRemarkUiChange,
   setRemarkHoverId,
 } from './bridge'
+import { getBlockRemarkTarget, getNodeBlockRemarkId } from './blockTargets'
 import { REMARK_NODE_NAME } from './constants'
 import {
   getRemarkDescription,
@@ -68,8 +69,18 @@ function collect() {
   const list = []
   const seen = new Set()
   view.state.doc.descendants((node, pos) => {
-    if (node.type.name !== REMARK_NODE_NAME) return
-    const id = String(node.attrs.id || '').trim()
+    let id = ''
+    let text = ''
+    if (node.type.name === REMARK_NODE_NAME) {
+      id = String(node.attrs.id || '').trim()
+      text = node.textContent || ''
+    } else if (getBlockRemarkTarget(node.type.name)) {
+      id = getNodeBlockRemarkId(node)
+      const title = String(node.attrs.title || '').trim()
+      text = title || node.textContent || ''
+    } else {
+      return
+    }
     if (!id || seen.has(id)) return
     seen.add(id)
     const dom = view.nodeDOM(pos)
@@ -87,7 +98,7 @@ function collect() {
     }
     list.push({
       id,
-      text: node.textContent || '',
+      text,
       top: Math.max(0, top),
       pos,
     })

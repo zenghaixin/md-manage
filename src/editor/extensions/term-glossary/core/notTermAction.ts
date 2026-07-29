@@ -1,8 +1,8 @@
-/**
+﻿/**
  * 选区「不是词条」：注册到全局选区气泡。
  */
-import { useGlossaryStore } from '../../../stores/glossary'
-import { registerSelectionAction } from '../../../components/selection-actions'
+import { useGlossaryStore } from '../../../../stores/glossary'
+import { registerSelectionAction } from '../../../../components/selection-actions'
 import { pluginKey } from './highlight'
 import { collectGlossary, findCandidateMatches } from './match'
 import { titlesContainedInText } from './syntax'

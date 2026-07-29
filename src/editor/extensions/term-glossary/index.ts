@@ -4,17 +4,17 @@ import type {
   GlobalMatchRule,
   MarkdownExtension,
 } from '../types'
-import { TERM_GLOSSARY_ID } from './constants'
-import { TermGlossaryHighlight } from './highlight'
-import { TermGlossaryNode } from './node'
-import { TermRefNode } from './termRef'
+import { TERM_GLOSSARY_ID } from './core/constants'
+import { TermGlossaryHighlight } from './core/highlight'
+import { TermGlossaryNode } from './core/node'
+import { TermRefNode } from './core/termRef'
 import {
   parseTermMarkdown,
   serializeTermMarkdown,
   titlePattern,
-} from './syntax'
+} from './core/syntax'
 
-export { TERM_GLOSSARY_ID, TERM_NODE_NAME, TERM_REF_NODE_NAME } from './constants'
+export { TERM_GLOSSARY_ID, TERM_NODE_NAME, TERM_REF_NODE_NAME } from './core/constants'
 export {
   createTermNode,
   formatTermSource,
@@ -25,12 +25,20 @@ export {
   titlePattern,
   TERM_BLOCK_RE,
   TERM_REF_RE,
-} from './syntax'
-export type { TermGlossaryAttrs } from './syntax'
-export { TermGlossaryNode } from './node'
-export { TermRefNode } from './termRef'
-export { TermGlossaryHighlight } from './highlight'
-export { TERM_GLOSSARY_STYLES } from './styles'
+} from './core/syntax'
+export type { TermGlossaryAttrs } from './core/syntax'
+export { TermGlossaryNode } from './core/node'
+export { TermRefNode } from './core/termRef'
+export { TermGlossaryHighlight } from './core/highlight'
+export { TERM_GLOSSARY_STYLES } from './core/styles'
+export {
+  normalizeTermType,
+  TERM_TYPE_BASIC,
+  TERM_TYPE_SPECIALS,
+  termTypeLabel,
+  isSpecialTermType,
+} from './core/termTypes'
+export type { TermTypeId, TermTypeSpecialId } from './core/termTypes'
 
 function collectEntries(
   nodes?: ExtensionNode[],
@@ -135,9 +143,11 @@ const termGlossaryExtension: MarkdownExtension = {
   async onAppStart() {
     const { useGlossaryStore } = await import('../../../stores/glossary')
     await useGlossaryStore().bootstrap()
-    const { bindPendingConflictRestore } = await import('./conflictDrawer')
+    const { bindPendingConflictRestore } = await import('./core/conflictDrawer')
     bindPendingConflictRestore()
-    const { bindNotTermSelectionAction } = await import('./notTermAction')
+    const { bindTermEditorPanel } = await import('./core/termEditorPanel')
+    bindTermEditorPanel()
+    const { bindNotTermSelectionAction } = await import('./core/notTermAction')
     bindNotTermSelectionAction()
   },
 

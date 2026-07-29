@@ -1,4 +1,4 @@
-import type { ExtensionNode } from '../types'
+﻿import type { ExtensionNode } from '../../types'
 import { TERM_GLOSSARY_ID } from './constants'
 
 /**
@@ -6,6 +6,7 @@ import { TERM_GLOSSARY_ID } from './constants'
  * ::: term [标题]
  * 描述（可多行）
  * :::
+ * 可选整块备注：`::: term [标题] {remark:r_xxx}`
  * 注意：`term` 与 `[标题]` 之间有空格。
  *
  * 落库语法（已确认引用）：
@@ -13,7 +14,7 @@ import { TERM_GLOSSARY_ID } from './constants'
  * `term` 与 `[` 之间无空格；引用两侧不加空格。
  */
 export const TERM_BLOCK_RE =
-  /:::[\t ]*term[\t ]*\[([^\]]*)\]\s*([\s\S]*?)\s*:::/gi
+  /:::[\t ]*term[\t ]*\[([^\]]*)\](?:[\t ]*\{([^}]*)\})?\s*([\s\S]*?)\s*:::/gi
 
 /** 行内已确认引用：可选两侧空白 + term[标题]（兼容旧落库） */
 export const TERM_REF_RE = / ?term\[([^\]]+)\] ?/g
@@ -21,6 +22,8 @@ export const TERM_REF_RE = / ?term\[([^\]]+)\] ?/g
 export interface TermGlossaryAttrs {
   title: string
   description: string
+  /** 整块备注 id；落库为开场行 `{remark:id}` */
+  remarkId?: string
 }
 
 /**
@@ -71,6 +74,12 @@ export function createTermNode(
   }
 }
 
+/** 从开场行 `{…}` 内解析 remark id */
+export function parseTermRemarkIdFromBrace(inner: string): string {
+  const m = /\bremark\s*:\s*([A-Za-z0-9_-]+)/i.exec(String(inner || ''))
+  return m?.[1]?.trim() || ''
+}
+
 /** 解析落库 Markdown → 内部节点（仅定义块） */
 export function parseTermMarkdown(text: string): ExtensionNode[] {
   const nodes: ExtensionNode[] = []
@@ -79,14 +88,16 @@ export function parseTermMarkdown(text: string): ExtensionNode[] {
   while ((match = TERM_BLOCK_RE.exec(text)) !== null) {
     const title = sanitizeTermTitle(match[1])
     if (!title) continue
-    nodes.push(
-      createTermNode(
-        title,
-        match[2],
-        { from: match.index, to: match.index + match[0].length },
-        match[0],
-      ),
+    const remarkId = parseTermRemarkIdFromBrace(match[2] || '')
+    const description = match[3] ?? ''
+    const node = createTermNode(
+      title,
+      description,
+      { from: match.index, to: match.index + match[0].length },
+      match[0],
     )
+    if (remarkId) node.attrs.remarkId = remarkId
+    nodes.push(node)
   }
   return nodes
 }
@@ -100,14 +111,23 @@ export function serializeTermMarkdown(node: ExtensionNode): string {
   }
   const title = String(node.attrs.title ?? '').trim()
   const description = String(node.attrs.description ?? node.content ?? '')
-  return formatTermSource(title, description)
+  const remarkId = String(node.attrs.remarkId ?? '').trim()
+  return formatTermSource(title, description, remarkId)
 }
 
-/** 统一落库：标题与描述之间换行；空描述不插多余空行 */
-export function formatTermSource(title: string, description: string): string {
+/** 统一落库：标题与描述之间换行；空描述不插多余空行；可选 `{remark:id}` */
+export function formatTermSource(
+  title: string,
+  description: string,
+  remarkId?: string,
+): string {
   const desc = String(description ?? '').replace(/\n+$/g, '')
-  if (!desc.trim()) return `::: term [${title}]\n:::`
-  return `::: term [${title}]\n${desc}\n:::`
+  const id = String(remarkId ?? '').trim()
+  const open = id
+    ? `::: term [${title}] {remark:${id}}`
+    : `::: term [${title}]`
+  if (!desc.trim()) return `${open}\n:::`
+  return `${open}\n${desc}\n:::`
 }
 
 /** 已确认引用落库形态（无两侧空格） */
@@ -129,11 +149,15 @@ export function replaceTermBlock(
   if (!target) return markdown
   const re = new RegExp(TERM_BLOCK_RE.source, 'gi')
   let found = false
-  const next = markdown.replace(re, (full, title: string) => {
-    if (String(title).trim() !== target) return full
-    found = true
-    return formatTermSource(newTitle, newDescription)
-  })
+  const next = markdown.replace(
+    re,
+    (full, title: string, braceInner: string) => {
+      if (String(title).trim() !== target) return full
+      found = true
+      const remarkId = parseTermRemarkIdFromBrace(braceInner || '')
+      return formatTermSource(newTitle, newDescription, remarkId)
+    },
+  )
   return found ? next : markdown
 }
 

@@ -14,6 +14,7 @@ export const icons = {
   panelRightClose: 'lucide:panel-right-close',
   chevronLeft: 'lucide:chevron-left',
   edit: 'lucide:pencil',
+  trash: 'lucide:trash-2',
   source: 'lucide:code-xml',
   folder: 'lucide:folder',
   folderOpen: 'lucide:folder-open',

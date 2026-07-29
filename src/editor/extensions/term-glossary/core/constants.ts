@@ -25,5 +25,3 @@ export const TERM_REF_INVALID_CLASS = TERM_DASH_KIND_CLASS.invalid
 
 /** 点击词条引用后的描述对话框 */
 export const TERM_POPOVER_CLASS = 'ext-term-popover'
-/** 候选选择 / 不是词条 / 曾用名 浮层 */
-export const TERM_PICKER_CLASS = 'ext-term-picker'

@@ -2,7 +2,9 @@
  * 备注扩展与壳层的桥：当前编辑器视图、滚动同步、悬停高亮、UI 刷新。
  */
 import type { EditorView } from '@tiptap/pm/view'
+import { NodeSelection } from '@tiptap/pm/state'
 import { notifyRightPanelModulesChanged } from '../../../editor/rightPanelRegistry'
+import { getNodeBlockRemarkId } from './blockTargets'
 import { REMARK_NODE_NAME } from './constants'
 import { isRemarkBoundaryExited } from './node'
 
@@ -28,7 +30,7 @@ export function getRemarkEditorView(): EditorView | null {
   return activeView && !activeView.isDestroyed ? activeView : null
 }
 
-/** 光标所在备注文案的 id；需编辑器聚焦且确实在备注内 */
+/** 光标所在备注文案的 id；需编辑器聚焦且确实在备注内 / 选中整块备注节点 */
 export function getActiveRemarkId(): string {
   const view = getRemarkEditorView()
   if (!view) return ''
@@ -38,7 +40,12 @@ export function getActiveRemarkId(): string {
     return ''
   }
   if (isRemarkBoundaryExited(view.state)) return ''
-  const { $from, empty } = view.state.selection
+  const { selection } = view.state
+  if (selection instanceof NodeSelection) {
+    const blockId = getNodeBlockRemarkId(selection.node)
+    if (blockId) return blockId
+  }
+  const { $from, empty } = selection
   if (!empty) return ''
   for (let d = $from.depth; d > 0; d -= 1) {
     if ($from.node(d).type.name !== REMARK_NODE_NAME) continue
@@ -47,7 +54,7 @@ export function getActiveRemarkId(): string {
   return ''
 }
 
-/** 当前编辑器正文是否含备注节点 */
+/** 当前编辑器正文是否含备注（行内节点或整块 attrs） */
 export function hasRemarksInEditor(): boolean {
   const view = getRemarkEditorView()
   if (!view) return false
@@ -55,6 +62,10 @@ export function hasRemarksInEditor(): boolean {
   view.state.doc.descendants((node) => {
     if (found) return false
     if (node.type.name === REMARK_NODE_NAME) {
+      found = true
+      return false
+    }
+    if (getNodeBlockRemarkId(node)) {
       found = true
       return false
     }

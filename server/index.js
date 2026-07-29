@@ -10,7 +10,7 @@ const DOCS_ROOT = path.resolve(__dirname, '../md')
 const META_FILE = path.join(DOCS_ROOT, '.tabs.json')
 const GLOSSARY_FILE = path.resolve(
   __dirname,
-  '../src/editor/extensions/term-glossary/glossary.json',
+  '../src/editor/extensions/term-glossary/core/glossary.json',
 )
 /** 项目级 UI 配置（不放 md/，避免混进设定文档） */
 const APP_CONFIG_FILE = path.resolve(__dirname, '../.app-config.json')
@@ -552,6 +552,24 @@ function normalizeFormerTitles(value) {
   return out
 }
 
+const TERM_TYPE_SPECIAL_IDS = new Set([
+  'character',
+  'faction',
+  'class',
+  'skill',
+  'geo',
+  'event',
+])
+
+function normalizeTermType(value) {
+  const raw = String(value ?? '')
+    .trim()
+    .toLowerCase()
+  if (!raw || raw === 'basic' || raw === 'generic' || raw === '普通') return 'basic'
+  if (TERM_TYPE_SPECIAL_IDS.has(raw)) return raw
+  return 'basic'
+}
+
 /**
  * 旧版 boolean → []；数组则规范化为冲突项列表。
  */
@@ -588,6 +606,7 @@ function scrubIgnoreContexts(terms) {
   for (const [key, term] of Object.entries(terms || {})) {
     next[key] = {
       ...term,
+      type: normalizeTermType(term?.type),
       ignoreContexts: normalizeIgnoreContexts(term?.ignoreContexts).filter(
         (c) => c === key || !titles.has(c),
       ),
@@ -642,6 +661,7 @@ async function scanMarkdownTerms(existingTerms = {}) {
         title,
         description: match[2].replace(/\r\n/g, '\n').trim(),
         sourcePath,
+        type: normalizeTermType(prev?.type),
         ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
         formerTitles: normalizeFormerTitles(prev?.formerTitles),
         pendingManualConfirm: normalizePendingManualConfirm(
@@ -682,6 +702,7 @@ app.put('/api/glossary', async (req, res) => {
         title,
         description: String(term?.description ?? '').trim(),
         sourcePath: String(term?.sourcePath ?? ''),
+        type: normalizeTermType(term?.type),
         ignoreContexts: normalizeIgnoreContexts(term?.ignoreContexts),
         formerTitles: normalizeFormerTitles(term?.formerTitles),
         pendingManualConfirm: normalizePendingManualConfirm(
@@ -727,12 +748,13 @@ app.patch('/api/glossary/file', async (req, res) => {
 
     const data = await readGlossaryFile()
     const nextTerms = { ...data.terms }
-    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[] }>} */
+    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[], type: string }>} */
     const preserved = {}
 
     for (const [key, term] of Object.entries(nextTerms)) {
       if (term?.sourcePath === sourcePath) {
         preserved[key] = {
+          type: normalizeTermType(term.type),
           ignoreContexts: normalizeIgnoreContexts(term.ignoreContexts),
           formerTitles: normalizeFormerTitles(term.formerTitles),
           pendingManualConfirm: normalizePendingManualConfirm(
@@ -772,6 +794,9 @@ app.patch('/api/glossary/file', async (req, res) => {
         title,
         description: String(item?.description ?? '').trim(),
         sourcePath,
+        type: normalizeTermType(
+          fromPrev?.type || fromData?.type || fromOld?.type || item?.type,
+        ),
         // 改名时保留旧词条的 ignore（「不需要修改」回改后仍应生效）
         ignoreContexts: normalizeIgnoreContexts(
           fromPrev?.ignoreContexts ||
@@ -1009,6 +1034,7 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
         title: newTitle,
         description: '',
         sourcePath: '',
+        type: 'basic',
         ignoreContexts: [],
         formerTitles,
         pendingManualConfirm: normalizePendingManualConfirm(conflicts),
@@ -1154,6 +1180,7 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
         title: termTitle,
         description: String(prev?.description ?? '').trim(),
         sourcePath: String(prev?.sourcePath || sourcePath || '').trim(),
+        type: normalizeTermType(prev?.type),
         ignoreContexts: list,
         formerTitles: normalizeFormerTitles(prev?.formerTitles),
         pendingManualConfirm: normalizePendingManualConfirm(

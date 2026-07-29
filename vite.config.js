@@ -32,7 +32,7 @@ export default defineConfig({
         path.resolve(rootDir, '.app-config.json'),
         path.resolve(
           rootDir,
-          'src/editor/extensions/term-glossary/glossary.json',
+          'src/editor/extensions/term-glossary/core/glossary.json',
         ),
       ],
     },

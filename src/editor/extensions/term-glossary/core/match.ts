@@ -1,8 +1,8 @@
-/**
+﻿/**
  * 词条匹配：segmentit 整词自动确认区间、灰线兜底、ignoreContexts。
  */
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { useGlossaryStore } from '../../../stores/glossary'
+import { useGlossaryStore } from '../../../../stores/glossary'
 import { TERM_NODE_NAME, TERM_REF_NODE_NAME } from './constants'
 import {
   findDictionaryHitsInText,
