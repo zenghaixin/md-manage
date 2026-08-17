@@ -186,7 +186,15 @@ function closeRightPanelSilent() {
 }
 
 function onSelectModule(id) {
-  if (!id || id === activeModuleId.value) return
+  if (!id) return
+  if (!rightOpen.value) {
+    rightOpen.value = true
+    void activateModule(id).then(() => {
+      notifyRightPanelOpened()
+    })
+    return
+  }
+  if (id === activeModuleId.value) return
   void activateModule(id)
 }
 
@@ -497,8 +505,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col" :class="{ 'cursor-progress': busy }">
-    <div ref="layoutEl" class="flex min-h-0 flex-1">
+  <div class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" :class="{ 'cursor-progress': busy }">
+    <div ref="layoutEl" class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <div
         v-if="showLeftPane"
         class="flex min-h-0 shrink-0 flex-col overflow-hidden"

@@ -57,9 +57,9 @@ defineExpose({
       <AppIcon :name="open ? 'chevronRight' : 'chevronLeft'" :size="16" />
     </button>
 
-    <!-- 模块书签：仅打开且有可见模块时显示，叠在开关下方 -->
+    <!-- 模块书签：有可见模块即显示（面板收起时也保留，方便点开） -->
     <div
-      v-if="open && bookmarks.length"
+      v-if="bookmarks.length"
       class="ops-bookmark-stack"
       :style="{ top: bookmarkOffset }"
     >
@@ -124,7 +124,17 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+  max-height: calc(100% - 3.2rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   transform: translateX(-100%);
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.ops-bookmark-stack::-webkit-scrollbar {
+  display: none;
 }
 
 .ops-module-tab {
@@ -135,6 +145,7 @@ defineExpose({
   justify-content: center;
   gap: 0.15em;
   width: 1.9rem;
+  flex-shrink: 0;
   margin: 0;
   padding: 0.65rem 0;
   border: 1px solid var(--border, #c5d0d8);

@@ -7,7 +7,7 @@ const settingsOpen = ref(false)
 </script>
 
 <template>
-  <div class="app-shell flex h-full min-h-0 flex-col">
+  <div class="app-shell flex h-full min-h-0 flex-col overflow-hidden">
     <header
       class="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 sm:gap-4 sm:px-4"
     >
@@ -24,7 +24,7 @@ const settingsOpen = ref(false)
       </el-button>
     </header>
 
-    <main class="flex min-h-0 flex-1 flex-col">
+    <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <RouterView />
     </main>
 

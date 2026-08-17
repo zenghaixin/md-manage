@@ -15,6 +15,7 @@ import {
   confirmDeleteSelectedTerm,
   getInsertPosAfterCurrentBlock,
 } from './termOps'
+import { createTermNestGuardPlugin } from './nestGuard'
 import TermNodeView from './TermNodeView.vue'
 
 declare module '@tiptap/core' {
@@ -130,6 +131,10 @@ export const TermGlossaryNode = Node.create({
 
   onCreate() {
     ensureTermGlossaryStyles()
+  },
+
+  addProseMirrorPlugins() {
+    return [createTermNestGuardPlugin()]
   },
 
   markdownTokenName: TERM_NODE_NAME,

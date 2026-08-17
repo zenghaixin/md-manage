@@ -11,6 +11,7 @@ import { registerSelectionAction } from '../../../components/selection-actions'
 import { requestOpenRightPanel } from '../../../editor/shellEvents'
 import { applyRemarkToSelection } from './apply'
 import {
+  getActiveRemarkId,
   getRemarkEditorView,
   getRemarkHoverId,
   notifyRemarkUi,
@@ -38,8 +39,10 @@ function bindSelectionAction() {
     label: '备注',
     order: 20,
     isVisible: (ctx) => {
-      if (ctx.text.trim()) return true
-      return !!findBlockRemarkTargetAt(ctx.view.state.doc, ctx.from, ctx.to)
+      const block = findBlockRemarkTargetAt(ctx.view.state.doc, ctx.from, ctx.to)
+      // 已整块备注过的模块（如词条）：再选中不显示「备注」
+      if (block) return !getNodeBlockRemarkId(block.node)
+      return !!ctx.text.trim()
     },
     run: (ctx) => {
       const id = applyRemarkToSelection(ctx.view, {
@@ -160,6 +163,32 @@ export const RemarkBridgeExtension = Extension.create({
           editorView.dom.addEventListener('focus', onFocusChange)
           editorView.dom.addEventListener('blur', onFocusChange)
 
+          /** 点击已备注锚点（整块模块 / 行内文案）→ 打开右侧备注 */
+          const onRemarkAnchorClick = (event: MouseEvent) => {
+            if (event.button !== 0) return
+            const target = event.target as HTMLElement | null
+            if (target?.closest?.('.ext-term-actions')) return
+            const hitInline = target?.closest?.('.ext-remark') as HTMLElement | null
+            const hitInlineId = String(
+              hitInline?.getAttribute?.('data-remark-id') || '',
+            ).trim()
+
+            window.setTimeout(() => {
+              if (editorView.isDestroyed) return
+              let id = ''
+              const { selection } = editorView.state
+              if (selection instanceof NodeSelection) {
+                id = getNodeBlockRemarkId(selection.node)
+              }
+              if (!id) id = getActiveRemarkId()
+              if (!id) id = hitInlineId
+              if (!id) return
+              requestOpenRightPanel({ moduleId: REMARK_PANEL_MODULE_ID })
+              notifyRemarkUi()
+            }, 0)
+          }
+          editorView.dom.addEventListener('click', onRemarkAnchorClick, true)
+
           const stopHover = onRemarkHoverChange(() => {
             if (editorView.isDestroyed) return
             editorView.dispatch(
@@ -180,6 +209,11 @@ export const RemarkBridgeExtension = Extension.create({
               scrollParent?.removeEventListener('scroll', onScroll)
               editorView.dom.removeEventListener('focus', onFocusChange)
               editorView.dom.removeEventListener('blur', onFocusChange)
+              editorView.dom.removeEventListener(
+                'click',
+                onRemarkAnchorClick,
+                true,
+              )
               if (getRemarkEditorView() === editorView) {
                 setRemarkEditorView(null)
               }
