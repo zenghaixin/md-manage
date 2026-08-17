@@ -312,7 +312,7 @@ const treeApi = reactive({
 <template>
   <aside class="file-sidebar flex h-full w-full min-h-0 flex-col border-r border-border bg-surface">
     <div
-      class="sidebar-tab-bar shrink-0 px-2 pt-2"
+      class="sidebar-tab-bar shrink-0"
       role="tablist"
       aria-label="侧栏视图"
     >
@@ -326,7 +326,7 @@ const treeApi = reactive({
         :aria-selected="sideTab === tab.id"
         @click="setSideTab(tab.id)"
       >
-        {{ tab.label }}
+        <span class="sidebar-bookmark-tab__label">{{ tab.label }}</span>
       </button>
     </div>
 
@@ -424,7 +424,9 @@ const treeApi = reactive({
 
 .sidebar-tab-bar {
   display: flex;
-  gap: 0.35rem;
+  align-items: flex-end;
+  gap: 0.3rem;
+  padding: 0.5rem 0.55rem 0;
   border-bottom: 1px solid var(--border, #c5d0d8);
 }
 
@@ -433,31 +435,59 @@ const treeApi = reactive({
   box-sizing: border-box;
   flex: 1;
   margin: 0 0 -1px;
-  padding: 0.45rem 0.5rem 0.55rem;
-  border: 1px solid var(--border, #c5d0d8);
-  border-radius: 0.45rem 0.45rem 0 0;
-  background: color-mix(in srgb, var(--surface, #f4f7f9) 88%, var(--ink, #1a2830));
+  padding: 0.42rem 0.6rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 0.55rem 0.55rem 0 0;
+  background: transparent;
   color: var(--muted, #5a6b75);
-  font-size: 0.875rem;
+  font-family: var(--font-display, inherit);
+  font-size: 0.8125rem;
   font-weight: 500;
-  line-height: 1.2;
-  letter-spacing: 0.02em;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  box-shadow: 0 -1px 4px rgba(26, 40, 48, 0.08);
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.sidebar-bookmark-tab__label {
+  display: block;
+  text-align: center;
 }
 
 .sidebar-bookmark-tab:hover {
-  background: var(--surface-hover, #e8eef2);
   color: var(--ink, #1a2830);
+  background: color-mix(in srgb, var(--surface-hover, #dde5eb) 70%, transparent);
 }
 
 .sidebar-bookmark-tab.is-active {
   z-index: 1;
-  background: transparent;
-  color: var(--accent, #2563eb);
+  color: var(--ink, #1a2830);
+  background: var(--surface, #f4f7f9);
   border-color: var(--border, #c5d0d8);
   border-bottom-color: var(--surface, #f4f7f9);
-  box-shadow: 0 -1px 5px rgba(26, 40, 48, 0.1);
+  font-weight: 600;
+  box-shadow: 0 -1px 0 color-mix(in srgb, #fff 40%, transparent);
+}
+
+.sidebar-bookmark-tab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0.28rem;
+  width: 1.1rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent, #0d6e6e);
+  transform: translateX(-50%);
+}
+
+html.dark .sidebar-bookmark-tab.is-active,
+[data-theme='dark'] .sidebar-bookmark-tab.is-active {
+  border-bottom-color: var(--surface, #1a2228);
+  box-shadow: none;
 }
 </style>
