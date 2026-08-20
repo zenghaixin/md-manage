@@ -17,6 +17,7 @@ import {
   setRemarkDescription,
 } from './storage'
 import { removeRemarkById } from './apply'
+import { requestSaveCurrentFile } from '../../shellEvents'
 
 const CARD_GAP = 8
 const CARD_MIN_H = 72
@@ -29,6 +30,18 @@ const hoverId = ref('')
 /** 光标所在备注文案对应的卡片 */
 const activeId = ref('')
 const draftMap = ref(/** @type {Record<string, string>} */ ({}))
+
+let remarkPersistTimer = null
+
+function scheduleRemarkPersist() {
+  if (remarkPersistTimer) clearTimeout(remarkPersistTimer)
+  remarkPersistTimer = setTimeout(() => {
+    remarkPersistTimer = null
+    void requestSaveCurrentFile().catch((err) => {
+      console.warn('[remark] persist description failed:', err)
+    })
+  }, 600)
+}
 
 const items = computed(() =>
   rawItems.value.map((it) => ({
@@ -189,6 +202,7 @@ function onLeave() {
 function onDescInput(id, value) {
   draftMap.value = { ...draftMap.value, [id]: value }
   setRemarkDescription(id, value)
+  scheduleRemarkPersist()
 }
 
 function descParts(text) {
@@ -223,6 +237,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (remarkPersistTimer) {
+    clearTimeout(remarkPersistTimer)
+    remarkPersistTimer = null
+    void requestSaveCurrentFile().catch(() => {})
+  }
   stopUi?.()
   stopDesc?.()
   editorScrollEl?.removeEventListener('scroll', onEditorScroll)

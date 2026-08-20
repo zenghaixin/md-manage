@@ -1,5 +1,5 @@
 /**
- * 全局词条 Store：读写 glossary.json，并与 Markdown 中的 ::: term 同步。
+ * 全局词条 Store：读写按类型拆分的 data/<type>.json（API 聚合），并与 Markdown 中的 ::: term 同步。
  */
 import { defineStore } from 'pinia'
 import { api } from '../api'
@@ -10,16 +10,20 @@ import {
   normalizeIgnoreContexts,
   normalizePendingManualConfirm,
   parseTermMarkdown,
+  peelRemarkBraceFromDescription,
   sanitizeTermTitle,
   type PendingConflictItem,
-} from '../editor/extensions/term-glossary/core/syntax'
+} from '../editor/extensions/term-glossary/core/model/syntax'
 import {
   normalizeTermType,
-  TERM_TYPE_BASIC,
   type TermTypeId,
-} from '../editor/extensions/term-glossary/core/termTypes'
-import { syncSegmenterTitles } from '../editor/extensions/term-glossary/core/segmenter'
-import { queueTermFlash } from '../editor/extensions/term-glossary/core/flashTerm'
+} from '../editor/extensions/term-glossary/core/shared/termTypes'
+import {
+  normalizeTermAttrs,
+  type TermAttrs,
+} from '../editor/extensions/term-glossary/types/termAttrs'
+import { syncSegmenterTitles } from '../editor/extensions/term-glossary/core/match/segmenter'
+import { queueTermFlash } from '../editor/extensions/term-glossary/core/shared/flashTerm'
 
 export type { PendingConflictItem }
 
@@ -29,6 +33,8 @@ export interface GlossaryTerm {
   sourcePath: string
   /** 词条类型；缺省 / 旧数据 = basic */
   type: TermTypeId
+  /** 按 type 解释的扩展字段；basic = {} */
+  attrs: TermAttrs
   ignoreContexts: string[]
   /** 曾用名：仅提示，不自动改文案 */
   formerTitles: string[]
@@ -47,11 +53,14 @@ export interface GlossaryFile {
 function normalizeTerm(raw: Partial<GlossaryTerm> & { title?: string }): GlossaryTerm | null {
   const title = sanitizeTermTitle(raw.title)
   if (!title) return null
+  const type = normalizeTermType(raw.type)
   return {
     title,
-    description: String(raw.description ?? ''),
+    description: peelRemarkBraceFromDescription(String(raw.description ?? ''))
+      .description,
     sourcePath: String(raw.sourcePath ?? ''),
-    type: normalizeTermType(raw.type),
+    type,
+    attrs: normalizeTermAttrs(type, raw.attrs),
     ignoreContexts: normalizeIgnoreContexts(raw.ignoreContexts),
     formerTitles: normalizeFormerTitles(raw.formerTitles).filter((f) => f !== title),
     pendingManualConfirm: normalizePendingManualConfirm(raw.pendingManualConfirm),
@@ -64,9 +73,11 @@ function scrubIgnoreContexts(
   const titles = new Set(Object.keys(terms))
   const next: Record<string, GlossaryTerm> = {}
   for (const [key, term] of Object.entries(terms)) {
+    const type = normalizeTermType(term.type)
     next[key] = {
       ...term,
-      type: normalizeTermType(term.type),
+      type,
+      attrs: normalizeTermAttrs(type, term.attrs),
       // 允许 ignore === 自身标题（点 × 且两侧无邻字时）；剔除指向其它词条标题的脏数据
       ignoreContexts: (term.ignoreContexts || []).filter(
         (c) => c === key || !titles.has(c),
@@ -191,11 +202,13 @@ export const useGlossaryStore = defineStore('glossary', {
       ).filter((f) => f !== to)
 
       if (from !== to) delete terms[from]
+      const type = normalizeTermType(prev?.type)
       terms[to] = {
         title: to,
         description,
         sourcePath: sourcePath || prev?.sourcePath || '',
-        type: normalizeTermType(prev?.type),
+        type,
+        attrs: normalizeTermAttrs(type, prev?.attrs),
         ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
         formerTitles: former,
         pendingManualConfirm: [],
@@ -205,6 +218,7 @@ export const useGlossaryStore = defineStore('glossary', {
 
     /**
      * 首次写下标题或插入时写入类型；已有词条则更新 type（不改描述）。
+     * 换 type 时按新类型重新 normalize attrs。
      */
     async upsertTermType(
       title: string,
@@ -218,12 +232,17 @@ export const useGlossaryStore = defineStore('glossary', {
       const terms: Record<string, GlossaryTerm> = {
         ...this.terms,
         [key]: prev
-          ? { ...prev, type }
+          ? {
+              ...prev,
+              type,
+              attrs: normalizeTermAttrs(type, prev.attrs),
+            }
           : {
               title: key,
               description: '',
               sourcePath: String(sourcePath || ''),
               type,
+              attrs: normalizeTermAttrs(type, {}),
               ignoreContexts: [],
               formerTitles: [],
               pendingManualConfirm: [],
@@ -317,12 +336,15 @@ export const useGlossaryStore = defineStore('glossary', {
       if (!path) return
       const nodes = parseTermMarkdown(markdown || '')
       const fileTerms = nodes
-        .map((n) => ({
-          title: sanitizeTermTitle(n.attrs.title),
-          description: String(n.attrs.description ?? n.content ?? '')
-            .replace(/\u00a0/g, ' ')
-            .trim(),
-        }))
+        .map((n) => {
+          const peeled = peelRemarkBraceFromDescription(
+            String(n.attrs.description ?? n.content ?? ''),
+          )
+          return {
+            title: sanitizeTermTitle(n.attrs.title),
+            description: peeled.description.replace(/\u00a0/g, ' ').trim(),
+          }
+        })
         .filter((t) => t.title)
 
       const data = (await api.patchGlossaryFile({

@@ -21,6 +21,7 @@ export const icons = {
   folderPlus: 'line-md:folder-plus',
   filePlus: 'line-md:file-plus',
   file: 'lucide:file-text',
+  remark: 'lucide:sticky-note',
   chevronRight: 'lucide:chevron-right',
   close: 'lucide:x',
   plus: 'lucide:plus',

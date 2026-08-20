@@ -4,17 +4,18 @@ import type {
   GlobalMatchRule,
   MarkdownExtension,
 } from '../types'
-import { TERM_GLOSSARY_ID } from './core/constants'
-import { TermGlossaryHighlight } from './core/highlight'
-import { TermGlossaryNode } from './core/node'
-import { TermRefNode } from './core/termRef'
+import { TERM_GLOSSARY_ID } from './core/shared/constants'
+import { TermGlossaryInteraction } from './core/plugins/interaction'
+import { TermGlossaryNode } from './core/model/node'
+import { TermRefNode } from './core/model/termRef'
 import {
   parseTermMarkdown,
+  peelRemarkBraceFromDescription,
   serializeTermMarkdown,
   titlePattern,
-} from './core/syntax'
+} from './core/model/syntax'
 
-export { TERM_GLOSSARY_ID, TERM_NODE_NAME, TERM_REF_NODE_NAME } from './core/constants'
+export { TERM_GLOSSARY_ID, TERM_NODE_NAME, TERM_REF_NODE_NAME } from './core/shared/constants'
 export {
   createTermNode,
   formatTermSource,
@@ -25,20 +26,27 @@ export {
   titlePattern,
   TERM_BLOCK_RE,
   TERM_REF_RE,
-} from './core/syntax'
-export type { TermGlossaryAttrs } from './core/syntax'
-export { TermGlossaryNode } from './core/node'
-export { TermRefNode } from './core/termRef'
-export { TermGlossaryHighlight } from './core/highlight'
-export { TERM_GLOSSARY_STYLES } from './core/styles'
+} from './core/model/syntax'
+export type { TermGlossaryAttrs } from './core/model/syntax'
+export { TermGlossaryNode } from './core/model/node'
+export { TermRefNode } from './core/model/termRef'
+export { TermGlossaryInteraction } from './core/plugins/interaction'
+export { TERM_GLOSSARY_STYLES } from './core/shared/styles'
 export {
   normalizeTermType,
   TERM_TYPE_BASIC,
   TERM_TYPE_SPECIALS,
   termTypeLabel,
   isSpecialTermType,
-} from './core/termTypes'
-export type { TermTypeId, TermTypeSpecialId } from './core/termTypes'
+} from './core/shared/termTypes'
+export type { TermTypeId, TermTypeSpecialId } from './core/shared/termTypes'
+export {
+  normalizeTermAttrs,
+  termAttrsSummary,
+  termAttrFieldsForType,
+  TERM_ATTR_FIELDS,
+} from './types/termAttrs'
+export type { TermAttrs, TermAttrFieldDef } from './types/termAttrs'
 
 function collectEntries(
   nodes?: ExtensionNode[],
@@ -49,9 +57,9 @@ function collectEntries(
     if (node.extensionId !== TERM_GLOSSARY_ID) continue
     const title = String(node.attrs.title ?? '').trim()
     if (!title) continue
-    const description = String(
-      node.attrs.description ?? node.content ?? '',
-    ).trim()
+    const description = peelRemarkBraceFromDescription(
+      String(node.attrs.description ?? node.content ?? ''),
+    ).description.trim()
     byTitle.set(title, description)
   }
   return Array.from(byTitle.entries()).map(([title, description]) => ({
@@ -72,7 +80,6 @@ function getGlobalMatchRule(): GlobalMatchRule {
         .map((n) => n.range!)
       const taken: Array<{ from: number; to: number }> = []
 
-      // 已确认引用 term[标题]
       {
         const re = /term\[([^\]]+)\]/g
         let m: RegExpExecArray | null
@@ -135,19 +142,19 @@ const termGlossaryExtension: MarkdownExtension = {
   getTiptapExtensions: () => [
     TermGlossaryNode,
     TermRefNode,
-    TermGlossaryHighlight,
+    TermGlossaryInteraction,
   ],
   getGlobalMatchRule,
 
-  /** 启动：加载 glossary.json 并与全部 .md 校验 */
+  /** 启动：加载词库并与全部 .md 校验 */
   async onAppStart() {
     const { useGlossaryStore } = await import('../../../stores/glossary')
     await useGlossaryStore().bootstrap()
-    const { bindPendingConflictRestore } = await import('./core/conflictDrawer')
+    const { bindPendingConflictRestore } = await import('./core/rename/conflictDrawer')
     bindPendingConflictRestore()
-    const { bindTermEditorPanel } = await import('./core/termEditorPanel')
+    const { bindTermEditorPanel } = await import('./core/panel/termEditorPanel')
     bindTermEditorPanel()
-    const { bindNotTermSelectionAction } = await import('./core/notTermAction')
+    const { bindNotTermSelectionAction } = await import('./core/panel/notTermAction')
     bindNotTermSelectionAction()
   },
 

@@ -8,7 +8,6 @@ import { Extension } from '@tiptap/core'
 import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { registerSelectionAction } from '../../../components/selection-actions'
-import { requestOpenRightPanel } from '../../../editor/shellEvents'
 import { applyRemarkToSelection } from './apply'
 import {
   getActiveRemarkId,
@@ -16,6 +15,7 @@ import {
   getRemarkHoverId,
   notifyRemarkUi,
   onRemarkHoverChange,
+  openRemarkById,
   setRemarkEditorView,
   syncRemarkPanelVisibility,
 } from './bridge'
@@ -24,7 +24,7 @@ import {
   getBlockRemarkTarget,
   getNodeBlockRemarkId,
 } from './blockTargets'
-import { REMARK_NODE_NAME, REMARK_PANEL_MODULE_ID } from './constants'
+import { REMARK_NODE_NAME } from './constants'
 import { isRemarkBoundaryExited } from './node'
 import { ensureRemarkStyles } from './styles'
 
@@ -50,8 +50,9 @@ function bindSelectionAction() {
         to: ctx.to,
       })
       if (!id) return
+      // 正文原位置：右侧备注栏
       window.setTimeout(() => {
-        requestOpenRightPanel({ moduleId: REMARK_PANEL_MODULE_ID })
+        openRemarkById(id, { ui: 'panel' })
       }, 180)
     },
   })
@@ -183,7 +184,7 @@ export const RemarkBridgeExtension = Extension.create({
               if (!id) id = getActiveRemarkId()
               if (!id) id = hitInlineId
               if (!id) return
-              requestOpenRightPanel({ moduleId: REMARK_PANEL_MODULE_ID })
+              openRemarkById(id, { ui: 'panel' })
               notifyRemarkUi()
             }, 0)
           }

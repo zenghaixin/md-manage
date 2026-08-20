@@ -49,6 +49,7 @@ export function getNodeBlockRemarkId(node: PMNode): string {
 
 /**
  * 选区是否正好是某个整块备注目标（如 NodeSelection 词条）。
+ * 定义块：点选整块词条后再点气泡「备注」。
  */
 export function findBlockRemarkTargetAt(
   doc: PMNode,

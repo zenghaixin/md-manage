@@ -68,10 +68,27 @@ function applyBlockRemark(
   const { state } = view
   const newId = createRemarkId()
   const oldId = String(hit.node.attrs[hit.attr] || '').trim()
-  const coveredIds = oldId ? [oldId] : []
+  const coveredIds: string[] = []
+  if (oldId) coveredIds.push(oldId)
+  // 词条内已有行内备注：描述合并进整块 id
+  hit.node.descendants((node) => {
+    if (node.type.name !== REMARK_NODE_NAME) return
+    const id = String(node.attrs.id || '').trim()
+    if (id && !coveredIds.includes(id)) coveredIds.push(id)
+  })
 
-  const tr = state.tr.setNodeMarkup(hit.pos, undefined, {
-    ...hit.node.attrs,
+  const tr = state.tr
+  // 先拆掉块内行内备注，避免与整块备注叠两套
+  const innerFrom = hit.pos + 1
+  const innerTo = hit.pos + hit.node.nodeSize - 1
+  if (innerTo > innerFrom) {
+    unwrapRemarksInRange(tr, innerFrom, innerTo)
+  }
+  const mappedPos = tr.mapping.map(hit.pos)
+  const current = tr.doc.nodeAt(mappedPos)
+  if (!current) return null
+  tr.setNodeMarkup(mappedPos, undefined, {
+    ...current.attrs,
     [hit.attr]: newId,
   })
 
@@ -82,7 +99,7 @@ function applyBlockRemark(
   }
 
   try {
-    tr.setSelection(NodeSelection.create(tr.doc, hit.pos))
+    tr.setSelection(NodeSelection.create(tr.doc, mappedPos))
   } catch {
     // ignore
   }
@@ -235,7 +252,18 @@ export function removeRemarkById(view: EditorView, id: string) {
   notifyRemarkUi()
 }
 
-/** 正文中仍存活的备注 id（行内 + 整块） */
+/** 从节点纯文本里捞误入的 `{remark:id}`（attrs 未写回时仍算存活） */
+function peelRemarkIdsFromText(text: string, into: Set<string>) {
+  const re =
+    /\{[\t ]*remark[\t ]*:[\t ]*([A-Za-z0-9_-]+)[\t ]*\}/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(String(text || ''))) !== null) {
+    const id = String(m[1] || '').trim()
+    if (id) into.add(id)
+  }
+}
+
+/** 正文中仍存活的备注 id（行内 + 整块 attrs + 误入 body 的 brace） */
 export function collectLiveRemarkIds(doc: PMNode): Set<string> {
   const live = new Set<string>()
   doc.descendants((node) => {
@@ -246,6 +274,10 @@ export function collectLiveRemarkIds(doc: PMNode): Set<string> {
     }
     const blockId = getNodeBlockRemarkId(node)
     if (blockId) live.add(blockId)
+    // 词条等整块目标：body 泄漏的 id 也算存活，避免存盘时 prune 掉描述
+    if (getBlockRemarkTarget(node.type.name)) {
+      peelRemarkIdsFromText(node.textContent || '', live)
+    }
   })
   return live
 }

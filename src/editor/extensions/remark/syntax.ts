@@ -17,9 +17,9 @@ export function extractRemarksMeta(markdown: string): {
   body: string
   descriptions: Record<string, string>
 } {
-  const text = String(markdown || '')
+  const text = String(markdown || '').replace(/\r\n/g, '\n')
   const m = META_RE.exec(text)
-  if (!m) return { body: text, descriptions: {} }
+  if (!m) return { body: String(markdown || ''), descriptions: {} }
   const body = text.slice(0, m.index).replace(/\s+$/, '')
   let descriptions: Record<string, string> = {}
   try {

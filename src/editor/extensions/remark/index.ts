@@ -49,3 +49,5 @@ const remarkExtension: MarkdownExtension = {
 
 export default remarkExtension
 export { REMARK_EXTENSION_ID, REMARK_NODE_NAME, REMARK_PANEL_MODULE_ID } from './constants'
+export { openRemarkById } from './bridge'
+export { openRemarkFloat, closeRemarkFloat } from './remarkFloat'

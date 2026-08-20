@@ -41,7 +41,8 @@
 业务逻辑、词条规则、备注逻辑、AI 分析、关系图等：**写在 extensions（或独立 feature 目录）**，不堆进 MarkdownEditor / DocsPage。
 
 ## 数据文件约定
-- `**/glossary.json`：运行时词库，**gitignore**；新字段靠代码 `normalize` / 默认值，不靠提交该文件传播
+- `term-glossary/data/<type>.json`：按类型存词条；必有 `list`（名称索引）+ `terms`（详情）
+- 前端 API 仍聚合为 `{ lastUpdated, terms }`，应用层无需改调用方式
 - 扩展落库语法与字段约定写在扩展目录与下文；改字段先改类型与 normalize
 
 # Constraints
@@ -54,8 +55,16 @@
 # Built-in Extension: term-glossary（词条）
 
 ## 目录
-- `core/`：共享引擎（语法、匹配、改名、确认、定义块/引用、`type` 字段）；全体词条共用
-- `types/`：特殊词条仅放样式 / 显示内容差异；自定义类型后续再议，且不进核心功能链路
+- `core/`：共享引擎，按职责分子目录：
+  - `shared/`：constants、termTypes、styles、editorViewRef、flashTerm
+  - `model/`：syntax、node、termRef、termOps、nestGuard、serializeDesc、TermNodeView
+  - `match/`：segmenter、match、convert、highlight
+  - `plugins/`：interaction 装配 + autoConfirm / click / prompt
+  - `dialog/`：词条弹窗
+  - `panel/`：右栏编辑、类型气泡、不是词条
+  - `rename/`：改名与冲突抽屉
+- `types/`：每个特殊类型单独文件夹；`registry.ts` 聚合；`termAttrs.ts` normalize/摘要
+- `data/`：运行时数据 — `basic.json` / `item.json` / …（每文件含 `list` + `terms`）
 - 根 `index.ts`：组装注册
 
 ## 落库语法
@@ -82,30 +91,48 @@
 - 标题经 `sanitizeTermTitle` 清洗；空标题不进词库
 - 定义块不完整（无标题或空描述）且光标不在块内 → 整块标红提示
 
-## glossary.json 字段
+## glossary 落库（data/<type>.json）
+每个类型一个文件，例如 `data/item.json`：
 ```json
 {
-  "title": "能量",
-  "description": "...",
-  "sourcePath": "...",
-  "type": "basic",
-  "ignoreContexts": ["恢复能量"],
-  "formerTitles": ["气"],
-  "pendingManualConfirm": []
+  "list": ["测试1"],
+  "terms": {
+    "测试1": {
+      "title": "测试1",
+      "description": "...",
+      "sourcePath": "...",
+      "type": "item",
+      "attrs": { "slot": "weapon", "rarity": "unique" },
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": []
+    }
+  }
 }
 ```
-- `type`：`basic`（普通）或 `character` / `faction` / `class` / `skill` / `geo` / `event`；缺省视为 basic
-- 插入：`Mod-Alt-t` → 类型气泡（1–6；底部 esc:普通词条；点外侧取消）→ 右侧「词条」面板定义 → 确认后在当前顶层块下一行插入定义块；取消/关栏丢弃
-- 定义块只读展示；选中后右上角「编辑 / 删除」；编辑进右栏；删除与 Backspace（整块选中）确认后删定义块并移除 glossary 条目
-- 改名：旧名进 `formerTitles`，`ignoreContexts` 清空；已确认 `term[旧]` 全库改为 `term[新]`
+- `list`：本文件词条名称索引（必有）；与 `terms` 的 key 对齐
+- `terms`：完整词条详情
+- 普通词条进 `basic.json`；API 仍聚合为单一 `terms` 表给前端
+- `type`：`basic` 或 `character` / `faction` / `class` / `skill` / `geo` / `event` / `item`
+- `attrs`：按 `type` 解释；schema 见 `types/termAttrs.ts` / 各 `types/<name>/`
+  - character: `status`、可选 `summary`
+  - faction: `scale`
+  - class / skill / geo: `kind`
+  - event: `timeLabel`、`status`
+  - item: `slot`、`rarity`
+- 特殊类型：`types/<name>/index.ts`；在 `types/registry.ts` 登记；type normalize：`core/termTypes.ts`
+- 插入：`Mod-Alt-t` → 类型气泡（1–7；底部 esc:普通词条；点外侧取消）→ 右侧「词条」面板定义（含 attrs）→ 确认后插入定义块；取消/关栏丢弃
+- 定义块只读展示类型标签 + attrs 摘要；选中后右上角「编辑 / 删除」；编辑进右栏；删除与 Backspace（整块选中）确认后删定义块并移除 glossary 条目
+- 改名：旧名进 `formerTitles`，`ignoreContexts` 清空；已确认 `term[旧]` 全库改为 `term[新]`；`attrs` 随词条保留
 - 曾用名仅提示不自动改；新名撞正文 → 右侧冲突抽屉（批量确认 / 自动或选字 ignore）
 - 新增标题撞他人曾用名 → 确认沿用旧词条或新建（新建则从旧词 formerTitles 删除）
 - `pendingManualConfirm`：改名扫描写入的待人工确认列表；非空时该标题不自动确认；处理完清空
 
 ## 关键文件
-- `core/`：`segmenter.ts` / `match.ts` / `convert.ts` / `conflictDrawer.ts` 等
-- `stores/glossary.ts`、`server/index.js`（rename-sync / apply-conflicts）
-- 运行时词库：`core/glossary.json`（gitignore）
+- `core/`：语法、匹配、改名、确认、`termTypes` normalize 等共享引擎（纯代码）
+- `types/<name>/`：各特殊类型模块；`registry.ts` 聚合；`termAttrs.ts` normalize/摘要
+- `data/<type>.json`：按类型词库（`list` 名称索引 + `terms` 详情）
+- `stores/glossary.ts`、`server/index.js`（读写时拆分/聚合各类型文件）
 
 ## API
 - GET/PUT `/api/glossary`
@@ -119,5 +146,5 @@
 - 右栏备注面板经 `rightPanelRegistry` 挂载；细节以该目录代码为准
 
 # 规划中能力（见 `待处理.md`，未实现勿当已有行为）
-- 词条 `type` + 图标、关系图、事件总览、AI 只读分析等
+- 右栏按类型列表、关系图、事件总览、AI 只读分析等
 - 实现时仍按「扩展 + 右栏模块 + shellEvents」接入，不改壳业务化

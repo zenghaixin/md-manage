@@ -16,7 +16,7 @@ dist-ssr
 md/
 
 # 运行时本地词库（由 API 读写，勿提交）
-**/glossary.json
+**/term-glossary/data/
 
 # Editor directories and files
 .vscode/*
