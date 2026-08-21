@@ -87,7 +87,7 @@ export function resolveTerm(
 }
 
 /**
- * 弹窗预览：仅给裸命中加灰线候选（已确认 term[] 在 Markdown 阶段已变成 span）。
+ * 弹窗预览：仅给裸命中加灰线候选（已确认 term[] 在 Markdown 阶 段已变成 span）。
  */
 function highlightCandidatesInElement(
   root: HTMLElement,

@@ -77,26 +77,43 @@ function clampToViewport(x, y, w, h) {
   }
 }
 
+function hasExplicitCoord(v) {
+  return v != null && Number.isFinite(Number(v))
+}
+
 function placeInitial() {
   const w = sizeW.value
-  const h = sizeH.value ?? props.minHeight
-  const hasLeft = typeof props.left === 'number'
-  const hasTop = typeof props.top === 'number'
+  const hasLeft = hasExplicitCoord(props.left)
+  const hasTop = hasExplicitCoord(props.top)
   if (hasLeft || hasTop) {
-    const x = hasLeft ? props.left : window.innerWidth - w - 24
+    const x = hasLeft ? Number(props.left) : window.innerWidth - w - 24
+    // 显式 top：保持与锚点平行，只做贴边保护，不做“居中式”下移
     const y = hasTop
-      ? props.top
-      : Math.max(24, Math.round((window.innerHeight - h) / 2))
-    const next = clampToViewport(x, y, w, h)
+      ? Number(props.top)
+      : Math.max(24, Math.round((window.innerHeight - (sizeH.value ?? props.minHeight)) / 2))
+    const next = clampToViewport(x, y, w, props.minHeight)
     posLeft.value = next.left
-    posTop.value = next.top
+    posTop.value = hasTop ? Math.max(8, Math.round(Number(props.top))) : next.top
+    // top 仅在完全超出视口底边时上移，绝不额外下移
+    const maxTop = Math.max(8, window.innerHeight - 48)
+    if (posTop.value > maxTop) posTop.value = maxTop
     return
   }
+  const h = sizeH.value ?? props.minHeight
   const x = window.innerWidth - w - 24
   const y = Math.max(24, Math.round((window.innerHeight - h) / 2))
   const next = clampToViewport(x, y, w, h)
   posLeft.value = next.left
   posTop.value = next.top
+}
+
+function setPosition(left, top) {
+  posLeft.value = Math.max(8, Math.round(Number(left) || 0))
+  posTop.value = Math.max(8, Math.round(Number(top) || 0))
+  const maxTop = Math.max(8, window.innerHeight - 48)
+  const maxLeft = Math.max(8, window.innerWidth - (rootEl.value?.offsetWidth || sizeW.value) - 8)
+  if (posTop.value > maxTop) posTop.value = maxTop
+  if (posLeft.value > maxLeft) posLeft.value = maxLeft
 }
 
 function onHeaderPointerDown(e) {
@@ -212,18 +229,17 @@ function setZIndex(z) {
   layerZ.value = Number(z) || layerZ.value
 }
 
-function setPosition(left, top) {
-  const el = rootEl.value
-  const w = el?.offsetWidth || sizeW.value
-  const h = el?.offsetHeight || sizeH.value || props.minHeight
-  const next = clampToViewport(left, top, w, h)
-  posLeft.value = next.left
-  posTop.value = next.top
-}
-
 function getBoundingClientRect() {
   return rootEl.value?.getBoundingClientRect() ?? null
 }
+
+watch(
+  () => [props.left, props.top],
+  () => {
+    if (!hasExplicitCoord(props.left) && !hasExplicitCoord(props.top)) return
+    placeInitial()
+  },
+)
 
 watch(
   () => props.zIndex,

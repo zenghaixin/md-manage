@@ -1,8 +1,8 @@
 /**
- * 关联浮层布局：
- * - 点根节点、且还没有窗 / 第一个已拖走 → 根节点右侧平行
- * - 点根节点、且第一个仍在原位 → 相对第一个右下打开
- * - 点某个弹窗内按钮 → 该弹窗右侧平行（与根是否关联无关）
+ * 浮层位置（保持简单）：
+ * 1) 没有「有效首扇」时：来源右侧平行（同 top，不下移）
+ * 2) 有有效首扇时：相对首扇左上角向右下错开
+ * 3) 首扇被拖动后：取消首扇资格，下一扇再按 1) 开
  */
 export type CascadeAnchor = {
   left: number
@@ -14,7 +14,6 @@ export type CascadeAnchor = {
 export const CASCADE_GAP = 8
 export const CASCADE_DOWN = 28
 const PAD = 8
-/** 超过此偏移视为「第一个已拖动」 */
 const MOVED_EPS = 8
 
 type Entry = {
@@ -23,24 +22,20 @@ type Entry = {
 }
 
 const entries: Entry[] = []
-/** 第一个浮层刚打开时的位置 */
-let firstInitial: { left: number; top: number } | null = null
-/** allocate 时记下的首窗位置，register 时写入 firstInitial */
-let pendingFirstPlace: { left: number; top: number } | null = null
 
-function clamp(
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-): { left: number; top: number } {
-  const maxX = Math.max(PAD, window.innerWidth - width - PAD)
-  const maxY = Math.max(PAD, window.innerHeight - Math.min(height, 120) - PAD)
-  return {
-    left: Math.min(maxX, Math.max(PAD, Math.round(left))),
-    top: Math.min(maxY, Math.max(PAD, Math.round(top))),
-  }
-}
+/** 有效首扇；拖动后置 null */
+let leader: {
+  id: string
+  originLeft: number
+  originTop: number
+  getRect: () => DOMRect | null
+} | null = null
+
+/** 相对首扇已开出的后续序号（1 = 第二扇） */
+let cascadeSeq = 0
+
+/** 最近一次 allocate 的结果，register 时挂到首扇 */
+let lastAllocated: { left: number; top: number } | null = null
 
 function asAnchor(
   rect: CascadeAnchor | DOMRect | null | undefined,
@@ -54,58 +49,66 @@ function asAnchor(
   return { left, right, top, bottom }
 }
 
-/** 相对来源右侧平行；右侧不够则左侧平行 */
+function clampLeft(left: number, width: number): number {
+  const maxX = Math.max(PAD, window.innerWidth - width - PAD)
+  return Math.min(maxX, Math.max(PAD, Math.round(left)))
+}
+
+function clampTop(top: number): number {
+  const maxY = Math.max(PAD, window.innerHeight - PAD - 40)
+  return Math.min(maxY, Math.max(PAD, Math.round(top)))
+}
+
+/** 右侧平行：top 与来源一致，不加任何下移 */
 export function placeParallel(
   source: CascadeAnchor,
   width: number,
-  height: number,
+  _height?: number,
 ): { left: number; top: number } {
-  const rightLeft = source.right + CASCADE_GAP
-  if (rightLeft + width <= window.innerWidth - PAD) {
-    return clamp(rightLeft, source.top, width, height)
+  let left = source.right + CASCADE_GAP
+  if (left + width > window.innerWidth - PAD) {
+    left = source.left - width - CASCADE_GAP
   }
-  return clamp(source.left - width - CASCADE_GAP, source.top, width, height)
+  return {
+    left: clampLeft(left, width),
+    top: clampTop(source.top),
+  }
 }
 
-/** 相对第一窗右下；右侧摆不下则叠在其右下角错位 */
-function placeRightBottomOfFirst(
-  first: CascadeAnchor,
+/** 相对首扇右下错开（第 n 扇，n>=1） */
+function placeDownRightFrom(
+  first: { left: number; top: number },
   width: number,
-  height: number,
-  index: number,
+  n: number,
 ): { left: number; top: number } {
-  // index: 1 = 第二扇，2 = 第三扇…
-  const step = Math.max(1, index)
-  const rightLeft = first.right + CASCADE_GAP
-  const topDown = first.top + CASCADE_DOWN
-  if (rightLeft + width <= window.innerWidth - PAD) {
-    return clamp(
-      rightLeft + (step - 1) * CASCADE_DOWN,
-      topDown + (step - 1) * CASCADE_DOWN,
-      width,
-      height,
-    )
+  const step = Math.max(1, n)
+  return {
+    left: clampLeft(first.left + step * CASCADE_DOWN, width),
+    top: clampTop(first.top + step * CASCADE_DOWN),
   }
-  return clamp(
-    first.left + step * CASCADE_DOWN,
-    first.top + step * CASCADE_DOWN,
-    width,
-    height,
-  )
 }
 
-function isFirstUnmoved(): boolean {
-  if (!entries.length || !firstInitial) return false
-  const rect = asAnchor(entries[0]?.getRect?.())
-  if (!rect) return false
-  return (
-    Math.abs(rect.left - firstInitial.left) <= MOVED_EPS &&
-    Math.abs(rect.top - firstInitial.top) <= MOVED_EPS
-  )
+/** 若首扇已拖离原点，取消首扇资格 */
+function invalidateLeaderIfMoved(): void {
+  if (!leader) return
+  const rect = asAnchor(leader.getRect())
+  if (!rect) {
+    leader = null
+    cascadeSeq = 0
+    return
+  }
+  const moved =
+    Math.abs(rect.left - leader.originLeft) > MOVED_EPS ||
+    Math.abs(rect.top - leader.originTop) > MOVED_EPS
+  if (moved) {
+    leader = null
+    cascadeSeq = 0
+  }
 }
 
 /**
- * 为即将打开的浮层分配位置。
+ * 分配位置。
+ * @returns 坐标；调用方挂载后 registerCascadeFloat
  */
 export function allocateCascadePlace(opts: {
   width: number
@@ -114,61 +117,38 @@ export function allocateCascadePlace(opts: {
   anchorRect?: CascadeAnchor | null
 }): { left: number; top: number } {
   const width = Math.max(1, Math.round(opts.width))
-  const height = Math.max(1, Math.round(opts.height))
+  const source =
+    asAnchor(opts.besideRect) || asAnchor(opts.anchorRect)
 
-  // 弹窗内按钮
-  const beside = asAnchor(opts.besideRect)
-  if (beside) {
-    // 第一窗未拖动 → 后续仍相对第一窗右下
-    if (isFirstUnmoved()) {
-      const first = asAnchor(entries[0]?.getRect?.())
-      if (first) {
-        pendingFirstPlace = null
-        return placeRightBottomOfFirst(
-          first,
-          width,
-          height,
-          entries.length,
-        )
-      }
-    }
-    // 第一窗已拖走：跟当前点击的这扇窗平行
-    pendingFirstPlace = null
-    return placeParallel(beside, width, height)
-  }
+  invalidateLeaderIfMoved()
 
-  const anchor = asAnchor(opts.anchorRect)
-  if (anchor) {
-    // 第一个还在原位 → 后续相对第一个右下
-    if (isFirstUnmoved()) {
-      const first = asAnchor(entries[0]?.getRect?.())
-      if (first) {
-        pendingFirstPlace = null
-        return placeRightBottomOfFirst(
-          first,
-          width,
-          height,
-          entries.length,
-        )
-      }
-    }
-    // 无首窗，或首窗已拖走 → 根节点右侧平行
-    const place = placeParallel(anchor, width, height)
-    if (entries.length === 0) {
-      pendingFirstPlace = { left: place.left, top: place.top }
+  let place: { left: number; top: number }
+
+  if (!leader) {
+    // 首次（或原首扇已拖走）：来源右侧平行
+    cascadeSeq = 0
+    if (source) {
+      place = placeParallel(source, width)
     } else {
-      pendingFirstPlace = null
+      place = {
+        left: clampLeft(window.innerWidth - width - 24, width),
+        top: clampTop(Math.round(window.innerHeight / 4)),
+      }
     }
-    return place
+  } else {
+    // 后续：相对首扇右下
+    cascadeSeq += 1
+    const firstRect = asAnchor(leader.getRect()) || {
+      left: leader.originLeft,
+      top: leader.originTop,
+      right: leader.originLeft,
+      bottom: leader.originTop,
+    }
+    place = placeDownRightFrom(firstRect, width, cascadeSeq)
   }
 
-  pendingFirstPlace = null
-  return clamp(
-    window.innerWidth - width - 24,
-    Math.max(PAD, Math.round(window.innerHeight / 4)),
-    width,
-    height,
-  )
+  lastAllocated = { ...place }
+  return place
 }
 
 export function registerCascadeFloat(
@@ -179,37 +159,46 @@ export function registerCascadeFloat(
   if (!key) return
   unregisterCascadeFloat(key)
   entries.push({ id: key, getRect })
-  if (entries.length === 1) {
-    if (pendingFirstPlace) {
-      firstInitial = { ...pendingFirstPlace }
-      pendingFirstPlace = null
-    } else {
-      const rect = asAnchor(getRect())
-      firstInitial = rect
-        ? { left: rect.left, top: rect.top }
-        : null
+
+  // 当前没有有效首扇 → 本扇成为首扇（原点用 allocate 算出的平行位）
+  if (!leader && lastAllocated) {
+    leader = {
+      id: key,
+      originLeft: lastAllocated.left,
+      originTop: lastAllocated.top,
+      getRect,
     }
+    cascadeSeq = 0
   }
+  lastAllocated = null
 }
 
 export function unregisterCascadeFloat(id: string): void {
   const key = String(id || '').trim()
   if (!key) return
   const index = entries.findIndex((e) => e.id === key)
-  if (index < 0) return
-  entries.splice(index, 1)
-  if (!entries.length) {
-    firstInitial = null
-    pendingFirstPlace = null
-    return
+  if (index >= 0) entries.splice(index, 1)
+
+  if (leader?.id === key) {
+    leader = null
+    cascadeSeq = 0
   }
-  // 原第一窗关了：以新的第一窗当前位置为「初始」，之后拖动才算脱钩
-  if (index === 0) {
-    const rect = asAnchor(entries[0]?.getRect?.())
-    firstInitial = rect ? { left: rect.left, top: rect.top } : null
+  if (!entries.length) {
+    leader = null
+    cascadeSeq = 0
+    lastAllocated = null
   }
 }
 
 export function cascadeFloatCount(): number {
   return entries.length
+}
+
+/** @deprecated 兼容旧调用；改为由 register 写入 leader */
+export function syncFirstInitialFromRect(
+  rect: { left: number; top: number } | null | undefined,
+): void {
+  if (!rect || !leader) return
+  leader.originLeft = Math.round(rect.left)
+  leader.originTop = Math.round(rect.top)
 }

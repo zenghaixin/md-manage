@@ -266,6 +266,7 @@ onBeforeUnmount(() => {
 defineExpose({
   flash: () => floatRef.value?.flash?.(),
   setZIndex: (z) => floatRef.value?.setZIndex?.(z),
+  setPosition: (left, top) => floatRef.value?.setPosition?.(left, top),
   getBoundingClientRect: () => floatRef.value?.getBoundingClientRect?.(),
   syncFromResolved,
   title: titleText,
@@ -279,8 +280,8 @@ defineExpose({
     :width="DIALOG_W"
     :height="null"
     :max-height="DIALOG_MAX_H"
-    :left="floatLeft"
-    :top="floatTop"
+    :left="props.floatLeft"
+    :top="props.floatTop"
     :z-index="zIndex"
     :resizable="true"
     :root-class="TERM_POPOVER_CLASS"
