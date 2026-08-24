@@ -9,11 +9,9 @@ import {
   TERM_TYPE_BASIC,
   type TermTypeId,
 } from '../shared/termTypes'
-import { openTermTypePicker } from '../panel/typePickerBubble'
 import { openTermEditorCreate } from '../panel/termEditorPanel'
 import {
   confirmDeleteSelectedTerm,
-  getInsertPosAfterCurrentBlock,
 } from './termOps'
 import { createTermNestGuardPlugin } from './nestGuard'
 import TermNodeView from './TermNodeView.vue'
@@ -21,10 +19,8 @@ import TermNodeView from './TermNodeView.vue'
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     termGlossary: {
-      /** @param termType 词条类型；默认普通 → 打开右栏新建 */
+      /** 打开新建词条浮层（落盘到词条/词条.md） */
       insertTermGlossary: (termType?: TermTypeId | string) => ReturnType
-      /** 弹出类型选择后再打开右栏新建 */
-      promptInsertTermGlossary: () => ReturnType
     }
   }
 }
@@ -219,37 +215,6 @@ export const TermGlossaryNode = Node.create({
           openTermEditorCreate({
             editor,
             termType: normalizeTermType(termType),
-            insertPos: getInsertPosAfterCurrentBlock(editor),
-          })
-          return true
-        },
-
-      promptInsertTermGlossary:
-        () =>
-        ({ editor }) => {
-          if (editor.isDestroyed) return false
-          const { from } = editor.state.selection
-          let anchor = { left: 0, top: 0, bottom: 0 }
-          try {
-            const c = editor.view.coordsAtPos(from)
-            anchor = { left: c.left, top: c.top, bottom: c.bottom }
-          } catch {
-            anchor = {
-              left: window.innerWidth / 2 - 80,
-              top: window.innerHeight / 3,
-              bottom: window.innerHeight / 3 + 20,
-            }
-          }
-
-          const insertPos = getInsertPosAfterCurrentBlock(editor)
-
-          void openTermTypePicker(anchor).then((result) => {
-            if (editor.isDestroyed || !result.ok) return
-            openTermEditorCreate({
-              editor,
-              termType: result.type,
-              insertPos,
-            })
           })
           return true
         },
@@ -258,7 +223,7 @@ export const TermGlossaryNode = Node.create({
 
   addKeyboardShortcuts() {
     return {
-      'Mod-Alt-t': ({ editor }) => editor.commands.promptInsertTermGlossary(),
+      // 新建走全局 Ctrl+Alt+T（见 term-glossary/index.ts），避免与 window 监听双开
 
       Backspace: ({ editor }) => {
         const { state } = editor

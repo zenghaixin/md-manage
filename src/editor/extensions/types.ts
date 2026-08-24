@@ -84,6 +84,12 @@ export interface MarkdownExtension {
   getTiptapExtensions(): AnyExtension[]
 
   /**
+   * 可选：贡献 MarkdownField lite 用的 TipTap 扩展（如 termRef 节点）。
+   * 由 `getMarkdownFieldLiteExtensions({ termRef: true })` 聚合。
+   */
+  getMarkdownFieldLiteExtensions?(): AnyExtension[]
+
+  /**
    * 返回用于全局文本匹配的规则（在正文其他地方匹配「标题」）。
    */
   getGlobalMatchRule(): GlobalMatchRule

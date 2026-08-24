@@ -3,6 +3,7 @@
  */
 import type { Editor } from '@tiptap/core'
 import { NodeSelection } from '@tiptap/pm/state'
+import type { EditorView } from '@tiptap/pm/view'
 import { fromStorageMarkdown } from '../../../../blankLines'
 import { requestSaveCurrentFile } from '../../../../shellEvents'
 import { confirmAction } from '../../../../../composables/useDialog'
@@ -14,6 +15,7 @@ import {
   serializeTermDescriptionFromNode,
 } from './serializeDesc'
 import { normalizeTermType, type TermTypeId } from '../shared/termTypes'
+import { getActiveTermEditor } from '../shared/editorViewRef'
 
 /** 当前顶层块之后（「当前行下一行」） */
 export function getInsertPosAfterCurrentBlock(editor: Editor): number {
@@ -126,9 +128,9 @@ export function replaceTermDefinition(
   const description = peeled.description.trim()
   const termType = normalizeTermType(opts.termType)
   const remarkId =
-    String(opts.remarkId ?? '').trim() ||
-    String(node.attrs.remarkId || '').trim() ||
-    peeled.remarkId
+    opts.remarkId !== undefined
+      ? String(opts.remarkId ?? '').trim()
+      : String(node.attrs.remarkId || '').trim() || peeled.remarkId
   const from = opts.pos
   const to = from + node.nodeSize
   const md = formatTermSource(title, description, remarkId)
@@ -154,6 +156,27 @@ export function replaceTermDefinition(
     }),
   )
   return true
+}
+
+/**
+ * 清除词条定义块上的整块备注（attrs + 开场行 + body 泄漏）。
+ * 供 remark.removeRemarkById 在删整块备注时调用。
+ */
+export function clearTermBlockRemarkAt(view: EditorView, pos: number): boolean {
+  const editor = getActiveTermEditor()
+  if (!editor || editor.isDestroyed || editor.view !== view) return false
+  const node = view.state.doc.nodeAt(pos)
+  if (!node || node.type.name !== TERM_NODE_NAME) return false
+  const title =
+    sanitizeTermTitle(node.attrs.title) || String(node.attrs.title ?? '').trim()
+  if (!title) return false
+  return replaceTermDefinition(editor, {
+    pos,
+    title,
+    description: serializeTermDescriptionFromNode(node),
+    termType: node.attrs.termType,
+    remarkId: '',
+  })
 }
 
 /**

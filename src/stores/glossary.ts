@@ -334,7 +334,12 @@ export const useGlossaryStore = defineStore('glossary', {
         .replace(/^\/+|\/+$/g, '')
         .trim()
       if (!path) return
-      const nodes = parseTermMarkdown(markdown || '')
+      const { isGlossaryDefPath } = await import(
+        '../editor/extensions/term-glossary/core/shared/glossaryPaths'
+      )
+      const nodes = isGlossaryDefPath(path)
+        ? parseTermMarkdown(markdown || '')
+        : []
       const fileTerms = nodes
         .map((n) => {
           const peeled = peelRemarkBraceFromDescription(

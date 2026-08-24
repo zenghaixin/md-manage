@@ -4,8 +4,8 @@
  * 可落当前打开文件，或跨页写回定义所在 sourcePath。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import DraggableFloat from '../../../components/DraggableFloat.vue'
-import { nextFloatZIndex } from '../../../components/floatZIndex'
+import DraggableFloat from '../../../components/draggable-float/DraggableFloat.vue'
+import { nextFloatZIndex } from '../../../components/draggable-float'
 import { requestSaveCurrentFile } from '../../shellEvents'
 import { saveRemarkDescriptionToPath } from './remotePersist'
 import {

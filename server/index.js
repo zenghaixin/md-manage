@@ -852,7 +852,8 @@ function scrubIgnoreContexts(terms) {
 }
 
 /**
- * 扫描全部 Markdown，得到 title → term。
+ * 扫描「词条/」下 Markdown 的 ::: term 定义，得到 title → term。
+ * 引用（term[标题]）仍由改名同步等全库扫描；此处只收录定义。
  * 保留已有 ignoreContexts / formerTitles。
  */
 async function scanMarkdownTerms(existingTerms = {}) {
@@ -861,6 +862,7 @@ async function scanMarkdownTerms(existingTerms = {}) {
   const paths = await fsTree.listAllMarkdownPaths()
 
   for (const sourcePath of paths) {
+    if (!fsTree.isGlossaryDefPath(sourcePath)) continue
     let content
     try {
       content = await fs.readFile(fsTree.absOf(sourcePath), 'utf-8')
@@ -938,7 +940,7 @@ app.put('/api/glossary', async (req, res) => {
 })
 
 /**
- * 启动校验：扫描全部 .md 的 ::: term，与 glossary.json 比对，有变动则写回。
+ * 启动校验：扫描「词条/」下 .md 的 ::: term，与 glossary.json 比对，有变动则写回。
  */
 app.post('/api/glossary/sync', async (_req, res) => {
   try {
@@ -962,9 +964,13 @@ app.post('/api/glossary/sync', async (_req, res) => {
 app.patch('/api/glossary/file', async (req, res) => {
   try {
     const sourcePath = String(req.body?.sourcePath || '').trim()
-    const fileTerms = Array.isArray(req.body?.terms) ? req.body.terms : null
+    let fileTerms = Array.isArray(req.body?.terms) ? req.body.terms : null
     if (!sourcePath || !fileTerms) {
       return res.status(400).json({ error: 'sourcePath / terms 格式错误' })
+    }
+    // 非词条目录：不收录定义；若该路径曾挂过词条则清空归属
+    if (!fsTree.isGlossaryDefPath(sourcePath)) {
+      fileTerms = []
     }
 
     const data = await readGlossaryFile()
@@ -1451,6 +1457,7 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
 })
 
 await ensureDocsRoot()
+await fsTree.ensureGlossarySystem()
 
 // Express 5：端口占用等错误会进回调第一个参数；若忽略会导致假「已启动」后立刻退出
 const server = app.listen(PORT, (err) => {

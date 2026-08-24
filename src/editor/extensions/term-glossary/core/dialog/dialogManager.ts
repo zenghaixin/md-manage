@@ -3,7 +3,7 @@
  */
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { useGlossaryStore } from '../../../../../stores/glossary'
-import { nextFloatZIndex } from '../../../../../components/floatZIndex'
+import { nextFloatZIndex } from '../../../../../components/draggable-float'
 import { TERM_POPOVER_CLASS } from '../shared/constants'
 import { collectGlossary } from '../match/match'
 import { TermDialog } from './dialog'

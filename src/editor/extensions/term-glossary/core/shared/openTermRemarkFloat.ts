@@ -2,7 +2,7 @@
  * 从预览 / 编辑浮层打开词条备注（支持定义在其它文件）。
  */
 import { alertError } from '../../../../../composables/useDialog'
-import type { CascadeAnchor } from '../../../../../components/floatCascade'
+import type { CascadeAnchor } from '../../../../../components/draggable-float'
 import { openRemarkFloat } from '../../../remark/remarkFloat'
 import { resolveTermRemarkForTitle } from './remoteTermRemark'
 
@@ -20,7 +20,7 @@ export async function openTermRemarkFloat(opts: {
   try {
     const resolved = await resolveTermRemarkForTitle(title, opts.sourcePath)
     if (!resolved?.remarkId) {
-      await alertError('找不到该词条的定义，无法打开备注')
+      await alertError('该词条暂无备注')
       return
     }
     openRemarkFloat({

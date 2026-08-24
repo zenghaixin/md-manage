@@ -5,8 +5,8 @@
  */
 import { computed, nextTick, ref, watch } from 'vue'
 import AppIcon from '../../../../../components/AppIcon.vue'
-import DraggableFloat from '../../../../../components/DraggableFloat.vue'
-import { nextFloatZIndex } from '../../../../../components/floatZIndex'
+import DraggableFloat from '../../../../../components/draggable-float/DraggableFloat.vue'
+import { nextFloatZIndex } from '../../../../../components/draggable-float'
 import { openTermRemarkFloat } from '../shared/openTermRemarkFloat'
 import { lookupLiveTermRemarkId } from '../shared/termRemarkAccess'
 import TermEditorPanel from './TermEditorPanel.vue'
@@ -36,7 +36,15 @@ const floatTitle = computed(() =>
   props.mode === 'edit' ? '编辑词条' : '新建词条',
 )
 
-const showRemarkBtn = computed(() => props.mode !== 'create')
+const showRemarkBtn = computed(() => {
+  if (props.mode === 'create') return false
+  const title = String(props.initialTitle || '').trim()
+  return !!(
+    liveRemarkId.value ||
+    String(props.remarkId || '').trim() ||
+    (title ? lookupLiveTermRemarkId(title) : '')
+  )
+})
 
 const sourceToggleTitle = computed(() =>
   descIsSource.value ? '切换到预览' : '切换到源码',

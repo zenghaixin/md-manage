@@ -69,7 +69,15 @@ function onEdit(event) {
   const pos = props.getPos()
   if (typeof pos !== 'number') return
   props.editor.chain().focus().setNodeSelection(pos).run()
-  openTermEditorEdit({ editor: props.editor, nodePos: pos })
+  const el = termRootEl()
+  const r = el?.getBoundingClientRect?.()
+  openTermEditorEdit({
+    editor: props.editor,
+    nodePos: pos,
+    besideRect: r
+      ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+      : null,
+  })
 }
 
 function onDelete(event) {

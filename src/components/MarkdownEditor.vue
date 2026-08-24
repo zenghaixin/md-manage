@@ -89,26 +89,38 @@ function publishOutlineFromEditor(ed) {
   /** @type {import('../editor/shellEvents').OutlineHeading[]} */
   const items = []
   ed.state.doc.descendants((node, pos) => {
-    if (node.type.name !== 'heading') return
-    const level = Number(node.attrs.level) || 1
-    const text = String(node.textContent || '').trim() || '（无标题）'
-    items.push({
-      id: `h-${pos}-${level}`,
-      level,
-      text,
-      pos,
-    })
+    if (node.type.name === 'heading') {
+      const level = Number(node.attrs.level) || 1
+      const text = String(node.textContent || '').trim() || '（无标题）'
+      items.push({
+        id: `h-${pos}-${level}`,
+        level,
+        text,
+        pos,
+      })
+      return
+    }
+    if (node.type.name === 'termGlossary') {
+      const text = String(node.attrs.title || '').trim() || '（无标题词条）'
+      items.push({
+        id: `term-${pos}`,
+        level: 2,
+        text,
+        pos,
+      })
+    }
   })
   publishDocumentOutline(items)
 }
 
-/** 源码模式：从 Markdown 文本解析 ATX 标题 */
+/** 源码模式：ATX 标题 + ::: term 定义块 */
 function publishOutlineFromSource(markdown) {
   if (!filePath.value) {
     publishDocumentOutline([])
     return
   }
-  const lines = String(markdown ?? '').split('\n')
+  const src = String(markdown ?? '')
+  const lines = src.split('\n')
   /** @type {import('../editor/shellEvents').OutlineHeading[]} */
   const items = []
   for (let i = 0; i < lines.length; i += 1) {
@@ -124,6 +136,21 @@ function publishOutlineFromSource(markdown) {
       line: i + 1,
     })
   }
+  const termRe = /:::[\t ]*term[\t ]*\[([^\]]*)\]/gi
+  let tm
+  while ((tm = termRe.exec(src)) !== null) {
+    const title = String(tm[1] || '').trim() || '（无标题词条）'
+    const before = src.slice(0, tm.index)
+    const line = before.split('\n').length
+    items.push({
+      id: `src-term-${line}-${tm.index}`,
+      level: 2,
+      text: title,
+      pos: -1,
+      line,
+    })
+  }
+  items.sort((a, b) => (a.line || 0) - (b.line || 0) || a.id.localeCompare(b.id))
   publishDocumentOutline(items)
 }
 

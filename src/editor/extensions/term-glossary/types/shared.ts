@@ -25,7 +25,7 @@ export interface TermAttrFieldDef {
 export interface TermSpecialDef<Id extends string = string> {
   id: Id
   label: string
-  /** Ctrl+Alt+T 气泡快捷键数字 */
+  /** 类型快捷键数字（历史气泡；现已改为 Ctrl+Alt+T 直开新建） */
   key: string
   fields: TermAttrFieldDef[]
 }

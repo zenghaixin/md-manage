@@ -11,6 +11,10 @@
 
 # Architecture：壳 vs 扩展（必读）
 
+**详细边界见 Cursor 规则：**
+- 通用 UI / 壳组件 → `.cursor/rules/shared-components.mdc`
+- Markdown 扩展 → `.cursor/rules/markdown-extensions.mdc`
+
 ## 核心壳（尽量少改）
 - `src/components/MarkdownEditor.vue`
 - `src/pages/DocsPage.vue`
@@ -29,7 +33,7 @@
   - 参考：`term-glossary/`、`remark/`
 - **右侧功能区面板** → 扩展内实现 UI，经 `rightPanelRegistry` 注册书签；需要打开右栏时用 `shellEvents.requestOpenRightPanel`
 - **跨组件协作**（打开某文件、强制保存、定位标题等）→ 优先扩 `shellEvents`，由壳注册监听；不要把扩展 import 进 DocsPage
-- **编辑器通用 UI 宿主**（快捷键气泡等，与具体扩展无关）→ `src/editor/components/`（如 `key-picker/`）；扩展只传内容与回调；勿与 `src/components/` 应用壳混淆
+- **可复用 UI**（拖拽弹窗、数字气泡、选区气泡等）→ `src/components/<name>/`，经 `index.ts` 导出；扩展只传内容与回调
 - **应用级偏好**（主题、右栏上次模块）→ `.app-config.json` + `useAppConfig`；**不是** glossary 数据
 
 ## 何时允许改壳
@@ -61,11 +65,16 @@
   - `match/`：segmenter、match、convert、highlight
   - `plugins/`：interaction 装配 + autoConfirm / click / prompt
   - `dialog/`：词条弹窗
-  - `panel/`：右栏编辑、类型气泡、不是词条
+  - `panel/`：编辑浮层、右栏词条占位、不是词条
   - `rename/`：改名与冲突抽屉
 - `types/`：每个特殊类型单独文件夹；`registry.ts` 聚合；`termAttrs.ts` normalize/摘要
 - `data/`：运行时数据 — `basic.json` / `item.json` / …（每文件含 `list` + `terms`）
 - 根 `index.ts`：组装注册
+
+## 落库与目录（当前定案）
+- **定义块**只认 `md/词条/` 下 `::: term`；默认新建落盘 `词条/词条.md`
+- 其它路径的 `::: term` 原文显示、不解析、不入库；引用 `term[标题]` 仍可在任意 md
+- 系统文件夹「词条」：置顶、不可删/改名/调序
 
 ## 落库语法
 ### 定义（有空格）
@@ -121,8 +130,8 @@
   - event: `timeLabel`、`status`
   - item: `slot`、`rarity`
 - 特殊类型：`types/<name>/index.ts`；在 `types/registry.ts` 登记；type normalize：`core/termTypes.ts`
-- 插入：`Mod-Alt-t` → 类型气泡（1–7；底部 esc:普通词条；点外侧取消）→ 右侧「词条」面板定义（含 attrs）→ 确认后插入定义块；取消/关栏丢弃
-- 定义块只读展示类型标签 + attrs 摘要；选中后右上角「编辑 / 删除」；编辑进右栏；删除与 Backspace（整块选中）确认后删定义块并移除 glossary 条目
+- 插入：`Mod-Alt-t`（全局）→ 直接打开新建浮层（类型在浮层内下拉，默认普通）→ 确认后**只**追加到 `词条/词条.md`，不插当前文引用、不跳转
+- 定义块只读展示类型标签 + attrs 摘要；选中后右上角「编辑 / 删除」；编辑开浮层（贴定义块或预览浮层右侧）
 - 改名：旧名进 `formerTitles`，`ignoreContexts` 清空；已确认 `term[旧]` 全库改为 `term[新]`；`attrs` 随词条保留
 - 曾用名仅提示不自动改；新名撞正文 → 右侧冲突抽屉（批量确认 / 自动或选字 ignore）
 - 新增标题撞他人曾用名 → 确认沿用旧词条或新建（新建则从旧词 formerTitles 删除）

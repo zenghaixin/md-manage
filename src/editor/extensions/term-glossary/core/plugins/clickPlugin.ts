@@ -18,7 +18,7 @@ import {
 import {
   KEY_PICKER_CLASS,
   type KeyPicker,
-} from '../../../../components/key-picker'
+} from '../../../../../components/key-picker'
 import { bindTermFlashView } from '../shared/flashTerm'
 import { replaceRangeWithTermRef } from '../match/convert'
 import { offerCreateMissingTerm } from '../dialog/createMissingTerm'

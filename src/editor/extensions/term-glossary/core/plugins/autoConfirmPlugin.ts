@@ -22,7 +22,7 @@ import {
   findConfirmHitOnExtendableIdle,
 } from '../match/match'
 import { setActiveTermEditorView } from '../shared/editorViewRef'
-import type { KeyPicker } from '../../../../components/key-picker'
+import type { KeyPicker } from '../../../../../components/key-picker'
 import type { PromptRuntime } from './prompt'
 
 export function createAutoConfirmPlugin(opts: {

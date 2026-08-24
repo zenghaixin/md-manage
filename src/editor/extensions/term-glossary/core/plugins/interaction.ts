@@ -1,7 +1,7 @@
 import { Extension } from '@tiptap/core'
 import { PluginKey } from '@tiptap/pm/state'
 import { ensureTermGlossaryStyles } from '../shared/styles'
-import { KeyPicker } from '../../../../components/key-picker'
+import { getKeyPicker } from '../../../../../components/key-picker'
 import { buildDecorations } from '../match/highlight'
 import { TermDialogManager } from '../dialog/dialogManager'
 import { createPromptRuntime } from './prompt'
@@ -26,7 +26,7 @@ export const TermGlossaryInteraction = Extension.create({
 
   addProseMirrorPlugins() {
     const manager = new TermDialogManager()
-    const picker = new KeyPicker()
+    const picker = getKeyPicker()
     const runtime = createPromptRuntime({
       picker,
       convertPluginKey,

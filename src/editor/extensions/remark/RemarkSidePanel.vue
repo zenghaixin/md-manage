@@ -224,6 +224,7 @@ function onRemove(id) {
   delete next[id]
   draftMap.value = next
   collect()
+  scheduleRemarkPersist()
 }
 
 onMounted(() => {

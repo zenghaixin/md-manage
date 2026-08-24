@@ -1,0 +1,58 @@
+---
+description: 拖拽弹窗套件接入（通用组件子集，扩展浮层必用）
+alwaysApply: true
+---
+
+# 拖拽弹窗（通用组件）
+
+属于 **`shared-components.mdc`** 中的可复用 UI；扩展里的预览/编辑/备注浮层**必须**用本套件，业务规则见 **`markdown-extensions.mdc`**。
+
+| 部分 | 路径 |
+|------|------|
+| 目录 | `src/components/draggable-float/` |
+| 壳 | `DraggableFloat.vue` |
+| 级联定位 | `floatCascade.ts` |
+| z-index | `floatZIndex.ts` |
+| body 挂载 | `openFloatHost.ts` |
+| 导出 | `index.ts` |
+
+完整 API 与示例见 `src/components/README.md` → **「拖拽弹窗」专章**。
+
+## 接入要点
+
+1. **推荐** `openFloatHost`（含 `allocateCascadePlace` + `registerCascadeFloat` + teardown）
+2. 内容挂 `DraggableFloat` 插槽（在宿主 Vue 组件内）
+3. 打开前**必须**传 `besideRect` / `anchorRect`
+4. 聚焦时 `nextFloatZIndex()` + `setZIndex`
+
+## 级联规则（保持简单）
+
+1. **无有效首扇 + 有来源** → 相对来源**右侧平行**（`top = source.top`，不下移）
+2. **有有效首扇且未拖动** → 相对首扇左上角 **+28/+28** 右下错开
+3. **首扇被用户拖走过** → 取消首扇资格，下一扇重新按 1)
+
+## 标准用法
+
+```ts
+import { openFloatHost, closeFloatHost } from '@/components/draggable-float'
+
+const r = anchorEl.getBoundingClientRect()
+const mount = openFloatHost({
+  cascadeId: 'my-float-id',
+  width: 380,
+  height: 560,
+  besideRect: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+  rootClassName: 'ext-my-float-root',
+  component: MyFloatHost,
+  props: ({ place, zIndex }) => ({ floatLeft: place.left, floatTop: place.top, zIndex }),
+})
+
+// 关闭
+closeFloatHost(mount)
+```
+
+## 注意
+
+- 每个打开入口**自行**传 `besideRect` / `anchorRect`；不会自动绑定「当前点击元素」
+- 选区气泡（`selection-actions/bubble.ts`）用独立定位，**不走**本模块
+- 右侧放不下时自动翻到来源左侧

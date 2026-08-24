@@ -12,7 +12,7 @@ import {
   KeyPicker,
   type KeyPickerAnchor,
   type KeyPickerSecondary,
-} from '../../../../components/key-picker'
+} from '../../../../../components/key-picker'
 
 export type FormerPickerAction = 'switch' | 'once' | 'never'
 

@@ -1,0 +1,89 @@
+---
+description: Markdown 编辑扩展边界：语法、TipTap、钩子、与壳的接入方式
+alwaysApply: true
+---
+
+# Markdown 扩展规则
+
+本规则只管 **自定义 Markdown 语法与编辑态业务**（词条、备注及未来扩展）。通用 UI 复用见 `shared-components.mdc`。
+
+## 写什么算扩展
+
+| 属于扩展 | 不属于扩展（别放这里） |
+|----------|------------------------|
+| 自定义语法 `::: xxx`、`term[]`、`remark()` | 三栏布局、文件树 CRUD |
+| TipTap Node / Mark / Plugin | `DraggableFloat`、选区气泡框架 |
+| 落盘前后变换、词库同步 | 主题、Toast、路由 |
+| 预览/编辑/备注浮层**内容** | 壳里打开哪个文件 |
+
+路径：**`src/editor/extensions/<extension-id>/`**，入口 **`index.ts`** 导出 `MarkdownExtension`。
+
+## 注册与契约
+
+1. 实现 `src/editor/extensions/types.ts` 中的 `MarkdownExtension`
+2. 在 `src/editor/extensions/index.ts` 调用 `registerExtension(...)`
+3. **禁止**在 `MarkdownEditor.vue`、`DocsPage.vue`、`main.js` 里 `import` 本扩展内部文件
+
+必实现：`id`、`parseMarkdown`、`serializeMarkdown`、`getTiptapExtensions`、`getGlobalMatchRule`
+
+可选钩子：
+
+| 钩子 | 时机 |
+|------|------|
+| `getMarkdownFieldLiteExtensions` | 贡献 `MarkdownField` lite 用的 TipTap 节点（如 `termRef`） |
+| `onAppStart` | 应用启动（加载全局数据、注册右栏/选区动作） |
+| `onFileSave` | 某 md 成功写盘后 |
+| `transformFromStorage` | 磁盘 → 编辑器前 |
+| `transformToStorage` | 编辑器 → 磁盘前 |
+
+壳通过 `runAppStartHooks` / `runFileSaveHooks` 调用，扩展不得绕过。
+
+## 扩展 UI 怎么挂（不碰壳）
+
+| 需求 | 做法 |
+|------|------|
+| 可拖拽弹窗 | 扩展内 Vue + **`draggable-float/` 套件**（`shared-components` / `float-cascade`） |
+| 右栏书签 | `registerRightPanelModule`；打开用 `requestOpenRightPanel` |
+| 选区气泡一项 | `registerSelectionAction` |
+| 打开/重载/保存文件 | `shellEvents`（`requestOpenFilePath`、`requestReloadFilePath`、`requestSaveCurrentFile`） |
+| 跨扩展全局数据 | Pinia / API；词条用 `stores/glossary.ts`，勿写进壳 |
+
+扩展 UI 文件放在 **本扩展目录内**（如 `core/dialog/`、`core/panel/`），不要上收到 `src/components/`。
+
+## 目录建议（新扩展）
+
+```
+extensions/<id>/
+  index.ts          # 注册对象 + registerExtension 侧注册
+  core/
+    model/          # 语法、TipTap 节点
+    plugins/        # 交互插件
+    panel/          # 浮层、右栏相关
+  types/            # 本扩展类型 schema（若有）
+```
+
+参考：`term-glossary/`、`remark/`。
+
+## 何时允许改壳
+
+仅当**所有扩展**都需要的通用能力缺失时，做最小补丁：
+
+- `shellEvents` 增与业务无关的事件
+- `rightPanelRegistry` / 扩展 hooks 增挂载点
+- 修布局 bug
+
+**不得**为单一扩展在壳里写 `if (term-glossary)` 类分支。
+
+## 禁止
+
+- 在 `DocsPage` / `MarkdownEditor` 写死某扩展逻辑
+- 扩展互相 deep import（可经 `shellEvents`、stores、公开的小 API）
+- 绕过 `registerExtension` 私自挂 TipTap
+- 在扩展里 duplicate 拖拽弹窗实现
+
+## 自检
+
+- [ ] 新语法/行为在 `extensions/<id>/`，已 `registerExtension`
+- [ ] 壳文件无本扩展 import
+- [ ] 浮层用 DraggableFloat 套件；右栏/选区用注册表
+- [ ] 存盘副作用在 `onFileSave` 或明确 API，不在 MarkdownEditor 内

@@ -14,6 +14,7 @@ import {
   serializeTermMarkdown,
   titlePattern,
 } from './core/model/syntax'
+import { isGlossaryDefPath } from './core/shared/glossaryPaths'
 
 export { TERM_GLOSSARY_ID, TERM_NODE_NAME, TERM_REF_NODE_NAME } from './core/shared/constants'
 export {
@@ -135,6 +136,29 @@ function getGlobalMatchRule(): GlobalMatchRule {
   }
 }
 
+let globalShortcutBound = false
+
+/** 全局 Ctrl+Alt+T：直接打开新建词条浮层（不依赖编辑器焦点） */
+function bindGlobalNewTermShortcut() {
+  if (globalShortcutBound || typeof window === 'undefined') return
+  globalShortcutBound = true
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.altKey) return
+      if (e.key !== 't' && e.key !== 'T') return
+      const t = e.target as HTMLElement | null
+      // 允许在输入框外/内均触发新建（产品：全局快捷键）
+      if (t?.closest?.('[data-term-editor-float]')) return
+      e.preventDefault()
+      void import('./core/panel/termEditorPanel').then(({ openTermEditorCreate }) => {
+        openTermEditorCreate({})
+      })
+    },
+    true,
+  )
+}
+
 const termGlossaryExtension: MarkdownExtension = {
   id: TERM_GLOSSARY_ID,
   parseMarkdown: parseTermMarkdown,
@@ -144,9 +168,30 @@ const termGlossaryExtension: MarkdownExtension = {
     TermRefNode,
     TermGlossaryInteraction,
   ],
+  getMarkdownFieldLiteExtensions: () => [TermRefNode],
   getGlobalMatchRule,
 
-  /** 启动：加载词库并与全部 .md 校验 */
+  /**
+   * 非「词条/」路径：打断 ::: term 围栏，使定义块原文显示、不解析成节点。
+   * （零宽空格插在 ::: 后，视觉上不可见）
+   */
+  transformFromStorage(markdown: string, path?: string) {
+    if (isGlossaryDefPath(path || '')) return markdown
+    return String(markdown || '').replace(
+      /:::(\s*)term(\s*)\[/gi,
+      ':::\u200B$1term$2[',
+    )
+  },
+
+  transformToStorage(markdown: string, path?: string) {
+    if (isGlossaryDefPath(path || '')) return markdown
+    return String(markdown || '').replace(
+      /:::\u200B(\s*)term(\s*)\[/gi,
+      ':::$1term$2[',
+    )
+  },
+
+  /** 启动：加载词库并与「词条/」下 .md 校验 */
   async onAppStart() {
     const { useGlossaryStore } = await import('../../../stores/glossary')
     await useGlossaryStore().bootstrap()
@@ -156,9 +201,12 @@ const termGlossaryExtension: MarkdownExtension = {
     bindTermEditorPanel()
     const { bindNotTermSelectionAction } = await import('./core/panel/notTermAction')
     bindNotTermSelectionAction()
+    const { bindTermGlossaryPanel } = await import('./core/panel/glossarySidePanel')
+    bindTermGlossaryPanel()
+    bindGlobalNewTermShortcut()
   },
 
-  /** 存盘后：按当前文件同步词条到全局表 */
+  /** 存盘后：按当前文件同步词条到全局表（非词条路径服务端会清空该 path 归属） */
   async onFileSave({ path, tab, file, markdown }) {
     const { useGlossaryStore } = await import('../../../stores/glossary')
     const sourcePath =

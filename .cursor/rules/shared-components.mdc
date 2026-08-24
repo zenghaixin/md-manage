@@ -1,0 +1,62 @@
+---
+description: 通用 UI 组件与壳组件边界；复用前先查 README
+alwaysApply: true
+---
+
+# 通用组件规则
+
+本规则只管 **UI 复用与壳布局**，不管 Markdown 语法、词条/备注业务。扩展开发见 `markdown-extensions.mdc`。
+
+**清单与 API：`src/components/README.md`**
+
+## 三类 UI（不要混放）
+
+| 类型 | 路径 | 谁用 | 放什么 |
+|------|------|------|--------|
+| **可复用通用** | `src/components/` 中非壳文件 | 壳 + 扩展 | 拖拽弹窗、数字气泡、`AppIcon`、`MarkdownField`、`selection-actions` |
+| **编辑器通用宿主** | `src/editor/components/` | 壳 + 扩展 | 与业务无关、仅编辑器内用的 UI（目前为空，预留） |
+| **壳专用** | `src/components/` 中布局件 | **仅** `DocsPage` 装配 | `FileSidebar`、`MarkdownEditor`、`OpsSidePanel`、`SettingsModal` |
+
+**扩展禁止** `import` 壳专用组件。需要开文件、保存、右栏 → 用 `shellEvents` / `rightPanelRegistry`（见扩展规则）。
+
+## 目录约定
+
+**同一套可复用能力**（多文件协作、共享状态）放在 **`src/components/<name>/` 子目录**，经 **`index.ts` 统一导出**。例如：
+
+| 目录 | 能力 |
+|------|------|
+| `draggable-float/` | 可拖拽弹窗（壳 + 级联 + z-index + body 挂载） |
+| `key-picker/` | 数字快捷键气泡（1–9 选项） |
+| `selection-actions/` | 编辑器选区气泡 |
+
+单文件、无协作状态的组件可仍放在 `components/` 根目录（如 `AppIcon.vue`、`MarkdownField.vue`）。  
+`src/editor/components/<name>/` 同理（如 `key-picker/`）。
+
+## 可复用组件（新增 UI 前先查）
+
+| 场景 | 用 |
+|------|-----|
+| 可拖拽弹窗 | `draggable-float/`（`DraggableFloat` + `openFloatHost` 等），细则 `float-cascade.mdc` |
+| 选区快捷按钮 | `selection-actions` → `registerSelectionAction` |
+| 小块 Markdown | `MarkdownField` |
+| 图标 | `AppIcon` + `src/icons.js` |
+| 侧栏分割条 | `PaneSplitter` |
+| 数字快捷键气泡 | `key-picker/` → `getKeyPicker()` |
+
+有可复用 → **直接用**；接近 → **扩 props**；职责不同才新建。
+
+## 禁止
+
+- 在 `components/` 写词条、备注、词库等业务逻辑
+- 扩展为业务单独写 `position: fixed` 浮层（必须走拖拽弹窗套件）
+- 把扩展私有面板塞进 `src/components/`
+
+## 改通用组件后（硬性）
+
+在 `src/components/` 或 `src/editor/components/` **新增**或**改对外 API** 时，同一 PR/任务内更新 `src/components/README.md`（目录表 + 专章 + 示例）。
+
+## 自检
+
+- [ ] 已查 README，未平行重写已有组件
+- [ ] 弹窗走拖拽弹窗套件且传了来源矩形
+- [ ] 业务 UI 未放进 `components/`

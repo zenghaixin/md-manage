@@ -10,7 +10,7 @@ import {
   watch,
 } from 'vue'
 import AppIcon from '../../../../../components/AppIcon.vue'
-import DraggableFloat from '../../../../../components/DraggableFloat.vue'
+import DraggableFloat from '../../../../../components/draggable-float/DraggableFloat.vue'
 import { api } from '../../../../../api'
 import { useGlossaryStore } from '../../../../../stores/glossary'
 import { alertError } from '../../../../../composables/useDialog'
@@ -18,7 +18,7 @@ import {
   requestReloadFilePath,
   requestSaveCurrentFile,
 } from '../../../../shellEvents'
-import { KeyPicker } from '../../../../components/key-picker'
+import { getKeyPicker } from '../../../../../components/key-picker'
 import {
   TERM_POPOVER_CLASS,
   TERM_REF_CANDIDATE_CLASS,
@@ -32,9 +32,12 @@ import { offerCreateMissingTerm } from './createMissingTerm'
 import { openTermEditorEditByTitle } from '../panel/termEditorPanel'
 import { openTermRemarkFloat } from '../shared/openTermRemarkFloat'
 import { lookupLiveTermRemarkId } from '../shared/termRemarkAccess'
+import { lookupTermRemarkInMarkdown } from '../shared/remoteTermRemark'
 
 const DIALOG_W = 400
 const DIALOG_MAX_H = 500
+/** 预览内候选气泡来源 id（关闭预览时仅关此来源） */
+const PREVIEW_PICKER_SOURCE = 'term-preview-float'
 
 const props = defineProps({
   term: {
@@ -57,15 +60,14 @@ const descHost = ref(null)
 const localTerm = ref({ ...props.term })
 const localTitles = ref([...props.titles])
 const saving = ref(false)
-let picker = null
 
 ensureTermGlossaryStyles()
 
 const titleText = computed(() => localTerm.value.title || '词条')
 const sourcePath = computed(() => String(localTerm.value.sourcePath || ''))
 const remarkId = computed(() => String(localTerm.value.remarkId || '').trim())
-/** 预览浮层始终显示备注入口 */
-const showRemarkBtn = true
+/** 已有整块备注时才显示入口（不在预览里新建备注） */
+const showRemarkBtn = computed(() => !!remarkId.value)
 const pathTitle = computed(() =>
   sourcePath.value ? `打开 ${sourcePath.value}` : '无来源路径',
 )
@@ -75,6 +77,23 @@ function refreshRemarkIdFromEditor() {
   const id = lookupLiveTermRemarkId(localTerm.value.title)
   if (!id || id === String(localTerm.value.remarkId || '').trim()) return
   localTerm.value = { ...localTerm.value, remarkId: id }
+}
+
+/** 定义在其它文件时：只读解析是否已有备注（不创建） */
+async function refreshRemarkIdFromSource() {
+  if (remarkId.value) return
+  const path = sourcePath.value
+  const title = localTerm.value.title
+  if (!path || !title) return
+  try {
+    const { content } = await api.getFileByPath(path)
+    const looked = lookupTermRemarkInMarkdown(content, title)
+    if (looked.remarkId) {
+      localTerm.value = { ...localTerm.value, remarkId: looked.remarkId }
+    }
+  } catch {
+    // ignore
+  }
 }
 
 function renderDesc() {
@@ -147,11 +166,11 @@ function onDescClick(e) {
       .split('\u0001')
       .map((s) => s.trim())
       .filter(Boolean)
-    if (!picker) picker = new KeyPicker()
-    picker.show({
+    getKeyPicker().show({
       anchor: candidate,
       label: '确认是否为词条',
       titles: candidates,
+      sourceId: PREVIEW_PICKER_SOURCE,
       onPick: (picked) => {
         void confirmCandidate(matchTitle.trim(), picked)
       },
@@ -250,17 +269,21 @@ watch(
     localTitles.value = [...props.titles]
     renderDesc()
     refreshRemarkIdFromEditor()
+    void refreshRemarkIdFromSource()
   },
 )
 
 onMounted(() => {
   renderDesc()
   refreshRemarkIdFromEditor()
+  void refreshRemarkIdFromSource()
 })
 
 onBeforeUnmount(() => {
-  picker?.destroy()
-  picker = null
+  const picker = getKeyPicker()
+  if (picker.isOpen && picker.currentSourceId === PREVIEW_PICKER_SOURCE) {
+    picker.hide()
+  }
 })
 
 defineExpose({

@@ -1,11 +1,7 @@
 /**
  * 词条新建 / 编辑：挂在可拖拽浮层；未确认关闭则丢弃。
  */
-import { createApp, type App } from 'vue'
-import ElementPlus from 'element-plus'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import type { Editor } from '@tiptap/core'
-import { getActivePinia } from 'pinia'
 import { api } from '../../../../../api'
 import { useGlossaryStore } from '../../../../../stores/glossary'
 import {
@@ -14,14 +10,14 @@ import {
 } from '../../../../shellEvents'
 import { alertError } from '../../../../../composables/useDialog'
 import {
-  allocateCascadePlace,
-  registerCascadeFloat,
-  unregisterCascadeFloat,
+  closeFloatHost,
+  openFloatHost,
+  nextFloatZIndex,
+  type FloatHostMount,
   type CascadeAnchor,
-} from '../../../../../components/floatCascade'
-import { nextFloatZIndex } from '../../../../../components/floatZIndex'
+} from '../../../../../components/draggable-float'
 import { ensureTermGlossaryStyles } from '../shared/styles'
-import { replaceTermBlock, sanitizeTermTitle, peelRemarkBraceFromDescription } from '../model/syntax'
+import { replaceTermBlock, sanitizeTermTitle, peelRemarkBraceFromDescription, formatTermSource } from '../model/syntax'
 import {
   getTermRemarkIdFromNode,
   findTermPosInDoc,
@@ -39,8 +35,8 @@ import {
 } from '../../types/termAttrs'
 import { commitTermRename } from '../rename/renameFlow'
 import { TERM_NODE_NAME } from '../shared/constants'
+import { GLOSSARY_DEFAULT_FILE } from '../shared/glossaryPaths'
 import {
-  insertTermDefinition,
   repairTermRemarkLeak,
   replaceTermDefinition,
 } from '../model/termOps'
@@ -53,9 +49,10 @@ const CASCADE_ID = 'term-editor-float'
 
 type CreateSession = {
   mode: 'create'
-  editor: Editor
+  /** 可选：有编辑器时用于定位；落盘不依赖当前文档 */
+  editor?: Editor | null
   termType: TermTypeId
-  insertPos: number
+  insertPos?: number
   attrs: TermAttrs
 }
 
@@ -91,36 +88,19 @@ type ConfirmPayload = {
 }
 
 let session: Session | null = null
-let vueApp: App | null = null
-let rootEl: HTMLDivElement | null = null
+let floatMount: FloatHostMount | null = null
 /** 从哪个弹窗打开：贴其右侧 */
 let openBeside: CascadeAnchor | null = null
-let hostRef: {
-  flash: () => void
-  setZIndex: (z: number) => void
-  bringFront: () => number
-  getBoundingClientRect: () => DOMRect | null
-} | null = null
 
 function sessionKey(s: Session): string {
-  if (s.mode === 'create') return `create:${s.insertPos}`
+  if (s.mode === 'create') return `create:${s.insertPos ?? 'glossary'}`
   if (s.mode === 'edit') return `edit:${s.title}`
   return `catalog:${s.title}`
 }
 
 function teardownMount() {
-  unregisterCascadeFloat(CASCADE_ID)
-  if (vueApp) {
-    try {
-      vueApp.unmount()
-    } catch {
-      // ignore
-    }
-    vueApp = null
-  }
-  rootEl?.remove()
-  rootEl = null
-  hostRef = null
+  closeFloatHost(floatMount)
+  floatMount = null
 }
 
 function discardSession() {
@@ -134,58 +114,42 @@ function present() {
   ensureTermGlossaryStyles()
   teardownMount()
 
-  const root = document.createElement('div')
-  root.className = 'ext-term-editor-float-root'
-  document.body.appendChild(root)
-  rootEl = root
-
   const isCreate = s.mode === 'create'
-  const place = allocateCascadePlace({
-    width: EDITOR_W,
-    height: EDITOR_H,
-    besideRect: openBeside,
-  })
+  const besideRect = openBeside
   openBeside = null
-  const z = nextFloatZIndex()
   const remarkId =
     s.mode === 'create' ? '' : String(s.remarkId || '').trim()
-  vueApp = createApp(TermEditorFloatHost, {
-    mode: isCreate ? 'create' : 'edit',
-    initialTitle: isCreate ? '' : s.title,
-    initialDescription: isCreate ? '' : s.description,
-    initialType: s.termType,
-    initialAttrs: s.attrs,
-    remarkId,
-    floatLeft: place.left,
-    floatTop: place.top,
-    zIndex: z,
-    onConfirm: (payload: ConfirmPayload) => {
-      void handleConfirm(payload)
-    },
-    onCancel: () => {
-      closeDiscard()
-    },
-    onFocus: () => {
-      hostRef?.setZIndex(nextFloatZIndex())
-    },
-  })
 
-  const pinia = getActivePinia()
-  if (pinia) vueApp.use(pinia)
-  vueApp.use(ElementPlus, { locale: zhCn })
-  const instance = vueApp.mount(root) as {
-    flash?: () => void
-    setZIndex?: (z: number) => void
-    bringFront?: () => number
-    getBoundingClientRect?: () => DOMRect | null
-  }
-  hostRef = {
-    flash: () => instance.flash?.(),
-    setZIndex: (next) => instance.setZIndex?.(next),
-    bringFront: () => instance.bringFront?.() ?? nextFloatZIndex(),
-    getBoundingClientRect: () => instance.getBoundingClientRect?.() ?? null,
-  }
-  registerCascadeFloat(CASCADE_ID, () => hostRef?.getBoundingClientRect() ?? null)
+  let mount!: FloatHostMount
+  mount = openFloatHost({
+    cascadeId: CASCADE_ID,
+    width: EDITOR_W,
+    height: EDITOR_H,
+    besideRect,
+    rootClassName: 'ext-term-editor-float-root',
+    component: TermEditorFloatHost,
+    props: ({ place, zIndex }) => ({
+      mode: isCreate ? 'create' : 'edit',
+      initialTitle: isCreate ? '' : s.title,
+      initialDescription: isCreate ? '' : s.description,
+      initialType: s.termType,
+      initialAttrs: s.attrs,
+      remarkId,
+      floatLeft: place.left,
+      floatTop: place.top,
+      zIndex,
+      onConfirm: (payload: ConfirmPayload) => {
+        void handleConfirm(payload)
+      },
+      onCancel: () => {
+        closeDiscard()
+      },
+      onFocus: () => {
+        mount.host.setZIndex?.(nextFloatZIndex())
+      },
+    }),
+  })
+  floatMount = mount
 }
 
 function closeDiscard() {
@@ -342,12 +306,6 @@ async function handleConfirm(payload: ConfirmPayload) {
     return
   }
 
-  const editor = s.editor
-  if (editor.isDestroyed) {
-    closeDiscard()
-    return
-  }
-
   const store = useGlossaryStore()
 
   if (s.mode === 'create') {
@@ -355,38 +313,44 @@ async function handleConfirm(payload: ConfirmPayload) {
       await alertError(`词条「${title}」已存在`)
       return
     }
-    const ok = insertTermDefinition(editor, {
-      title,
-      description,
-      termType,
-      at: s.insertPos,
-    })
-    if (!ok) {
-      await alertError('插入词条失败')
-      return
-    }
     try {
-      const terms = { ...store.terms }
-      terms[title] = {
+      const sourcePath = GLOSSARY_DEFAULT_FILE
+      let content = ''
+      try {
+        const file = await api.getFileByPath(sourcePath)
+        content = String(file?.content ?? '')
+      } catch {
+        content = ''
+      }
+      const block = formatTermSource(title, description)
+      const nextMd = content.trimEnd()
+        ? `${content.replace(/\s*$/, '')}\n\n${block}\n`
+        : `${block}\n`
+      await api.saveFileByPath(sourcePath, nextMd)
+      await store.syncFileByPath(sourcePath, nextMd)
+      await persistCatalogFields({
         title,
         description,
-        sourcePath: '',
-        type: termType,
+        termType,
         attrs,
-        ignoreContexts: [],
-        formerTitles: [],
-        pendingManualConfirm: [],
-      }
-      await store.persistTerms(terms)
+        sourcePath,
+      })
+      requestReloadFilePath(sourcePath)
     } catch (err) {
-      console.warn('[term-editor] persist create failed:', err)
+      console.warn('[term-editor] create to glossary file failed:', err)
+      await alertError(err instanceof Error ? err.message : '新建词条失败')
+      return
     }
-    requestSaveCurrentFile()
     closeAfterConfirm()
     return
   }
 
   // edit（当前文档定义块）
+  const editor = s.editor
+  if (!editor || editor.isDestroyed) {
+    closeDiscard()
+    return
+  }
   const oldTitle = sanitizeTermTitle(s.title)
   const node = editor.state.doc.nodeAt(s.nodePos)
   if (!node || node.type.name !== TERM_NODE_NAME) {
@@ -483,8 +447,8 @@ function openSession(
   besideRect?: CascadeAnchor | null,
 ) {
   // 同一编辑会话已打开：置顶 + 闪烁，不重挂（避免丢未保存草稿）
-  if (session && vueApp && hostRef && sessionKey(session) === sessionKey(next)) {
-    hostRef.bringFront()
+  if (session && floatMount && sessionKey(session) === sessionKey(next)) {
+    floatMount.host.bringFront?.()
     return
   }
   session = next
@@ -492,27 +456,58 @@ function openSession(
   present()
 }
 
-/** 选类型后：浮层新建（正文暂不插入） */
-export function openTermEditorCreate(opts: {
-  editor: Editor
-  termType?: TermTypeId | string
-  insertPos: number
-}) {
-  if (opts.editor.isDestroyed) return
-  const termType = normalizeTermType(opts.termType ?? TERM_TYPE_BASIC)
-  openSession({
-    mode: 'create',
-    editor: opts.editor,
-    termType,
-    attrs: normalizeTermAttrs(termType, {}),
-    insertPos: opts.insertPos,
-  })
+/** 从编辑器光标取锚点矩形（用于浮层贴光标打开） */
+function cursorAnchorFromEditor(editor: Editor | null | undefined): CascadeAnchor | null {
+  if (!editor || editor.isDestroyed) return null
+  try {
+    const c = editor.view.coordsAtPos(editor.state.selection.from)
+    if (![c.left, c.right, c.top, c.bottom].every((n) => Number.isFinite(n))) {
+      return null
+    }
+    return { left: c.left, right: c.right, top: c.top, bottom: c.bottom }
+  } catch {
+    return null
+  }
 }
 
-/** 从定义块打开编辑 */
+/** 新建词条：浮层贴光标（有编辑器时）打开，确认后写入 词条/词条.md */
+export function openTermEditorCreate(opts: {
+  editor?: Editor | null
+  termType?: TermTypeId | string
+  insertPos?: number
+  besideRect?: CascadeAnchor | null
+} = {}) {
+  if (opts.editor?.isDestroyed) return
+  const editor = opts.editor ?? getActiveTermEditor()
+  const termType = normalizeTermType(opts.termType ?? TERM_TYPE_BASIC)
+  const beside =
+    opts.besideRect ?? cursorAnchorFromEditor(editor)
+  openSession(
+    {
+      mode: 'create',
+      editor: editor ?? null,
+      termType,
+      attrs: normalizeTermAttrs(termType, {}),
+      insertPos: opts.insertPos,
+    },
+    beside,
+  )
+}
+
+function rectFromDom(el: Element | null | undefined): CascadeAnchor | null {
+  if (!el || !document.body.contains(el)) return null
+  const r = el.getBoundingClientRect()
+  if (![r.left, r.right, r.top, r.bottom].every((n) => Number.isFinite(n))) {
+    return null
+  }
+  return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+}
+
+/** 从定义块打开编辑：贴定义块右侧（与预览浮层同一套规则） */
 export function openTermEditorEdit(opts: {
   editor: Editor
   nodePos: number
+  besideRect?: CascadeAnchor | null
 }) {
   const { editor } = opts
   if (editor.isDestroyed) return
@@ -526,16 +521,22 @@ export function openTermEditorEdit(opts: {
   const termType = normalizeTermType(
     node.attrs.termType || stored?.type || TERM_TYPE_BASIC,
   )
-  openSession({
-    mode: 'edit',
-    editor,
-    termType,
-    nodePos,
-    title,
-    description,
-    attrs: normalizeTermAttrs(termType, stored?.attrs),
-    remarkId,
-  })
+  const beside =
+    opts.besideRect ??
+    rectFromDom(editor.view.nodeDOM(nodePos) as Element | null)
+  openSession(
+    {
+      mode: 'edit',
+      editor,
+      termType,
+      nodePos,
+      title,
+      description,
+      attrs: normalizeTermAttrs(termType, stored?.attrs),
+      remarkId,
+    },
+    beside,
+  )
 }
 
 /** 从引用弹窗等：按词库标题打开同一套编辑浮层 */

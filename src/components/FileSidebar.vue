@@ -123,7 +123,8 @@ function cancelRename() {
   renameDraft.value = ''
 }
 
-async function startRename(path, draft) {
+async function startRename(path, draft, node) {
+  if (node?.system) return
   renamingKey.value = path
   renameDraft.value = draft
   await nextTick()
@@ -158,11 +159,13 @@ function toggleFolder(path) {
 }
 
 function onTouchStart(node) {
+  if (node?.system) return
   clearTimeout(longPressTimer)
   longPressTimer = setTimeout(() => {
     startRename(
       node.path,
       node.type === 'file' ? displayName(node.name) : node.name,
+      node,
     )
   }, 500)
 }
@@ -173,6 +176,10 @@ function onTouchEnd() {
 }
 
 function onDragStart(e, node) {
+  if (node?.system) {
+    e.preventDefault()
+    return
+  }
   dragging.value = { type: node.type, path: node.path }
   lastDropIntent = null
   dropHint.value = null

@@ -14,6 +14,9 @@ import {
 } from './blockTargets'
 import { REMARK_NODE_NAME } from './constants'
 import { createRemarkId } from './syntax'
+import { TERM_NODE_NAME } from '../term-glossary/core/shared/constants'
+import { clearTermBlockRemarkAt } from '../term-glossary/core/model/termOps'
+import { getTermRemarkIdFromNode } from '../term-glossary/core/model/serializeDesc'
 import {
   getRemarkDescription,
   mergeRemarkDescriptions,
@@ -224,7 +227,10 @@ export function removeRemarkById(view: EditorView, id: string) {
     }
     const target = getBlockRemarkTarget(node.type.name)
     if (!target) return
-    if (String(node.attrs[target.attr] || '') !== needle) return
+    const blockId =
+      String(node.attrs[target.attr] || '').trim() ||
+      (node.type.name === TERM_NODE_NAME ? getTermRemarkIdFromNode(node) : '')
+    if (blockId !== needle) return
     blockOps.push({ pos, node, attr: target.attr })
   })
 
@@ -235,9 +241,14 @@ export function removeRemarkById(view: EditorView, id: string) {
   for (const op of ops) {
     tr = tr.replaceWith(op.from, op.to, op.content)
   }
-  // 块 attrs：从后往前改 markup，避免 pos 错位（仅清 attr、不删节点）
+
+  const termBlockOps: typeof blockOps = []
   blockOps.sort((a, b) => b.pos - a.pos)
   for (const op of blockOps) {
+    if (op.node.type.name === TERM_NODE_NAME) {
+      termBlockOps.push(op)
+      continue
+    }
     const mappedPos = tr.mapping.map(op.pos)
     const current = tr.doc.nodeAt(mappedPos)
     if (!current) continue
@@ -249,6 +260,16 @@ export function removeRemarkById(view: EditorView, id: string) {
 
   view.dispatch(tr)
   removeRemarkDescription(needle)
+
+  const termPositions: number[] = []
+  view.state.doc.descendants((node, pos) => {
+    if (node.type.name !== TERM_NODE_NAME) return
+    if (getTermRemarkIdFromNode(node) === needle) termPositions.push(pos)
+  })
+  for (const pos of termPositions.sort((a, b) => b - a)) {
+    clearTermBlockRemarkAt(view, pos)
+  }
+
   notifyRemarkUi()
 }
 

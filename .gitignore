@@ -18,6 +18,9 @@ md/
 # 运行时本地词库（由 API 读写，勿提交）
 **/term-glossary/data/
 
+# Cursor 本地提交草稿（勿提交）
+.cursor/commit-draft.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

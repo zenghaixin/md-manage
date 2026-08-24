@@ -32,15 +32,21 @@ function intoClass() {
     <!-- 文件夹 -->
     <template v-if="node.type === 'folder'">
       <div
-        class="group relative flex min-h-9 w-full items-center gap-1 rounded-md px-2 py-1 text-sm text-ink transition-colors hover:bg-surface-hover"
-        :class="[hintClass(), intoClass()]"
-        draggable="true"
-        @dragstart="api.onDragStart($event, node)"
+        class="group relative flex min-h-9 w-full items-center gap-1 rounded-md px-2 py-1 text-sm transition-colors"
+        :class="[
+          hintClass(),
+          intoClass(),
+          node.system
+            ? 'font-medium text-accent hover:bg-accent-soft/60'
+            : 'text-ink hover:bg-surface-hover',
+        ]"
+        :draggable="!node.system"
+        @dragstart="!node.system && api.onDragStart($event, node)"
         @dragend="api.onDragEnd"
         @dragover="api.onDragOverRow($event, { parentPath, index, node, intoFolder: !api.expanded[node.path] })"
         @drop="api.onDropRow"
       >
-        <template v-if="api.renamingKey === node.path">
+        <template v-if="api.renamingKey === node.path && !node.system">
           <AppIcon name="folder" :size="16" class="text-accent" />
           <div
             class="flex min-w-0 flex-1 items-center gap-1 rounded-md border border-accent bg-accent-soft py-0.5 pl-1.5 pr-1.5"
@@ -60,7 +66,7 @@ function intoClass() {
         <template v-else>
           <button
             type="button"
-            class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border-0 bg-transparent p-0 text-left text-ink outline-none"
+            class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border-0 bg-transparent p-0 text-left text-inherit outline-none"
             @click="api.toggleFolder(node.path)"
             @dragover="api.onDragOverRow($event, { parentPath, index, node, intoFolder: true })"
             @drop="api.onDropRow"
@@ -77,8 +83,13 @@ function intoClass() {
               class="text-accent"
             />
             <span class="min-w-0 flex-1 truncate font-medium select-none">{{ node.name }}</span>
+            <span
+              v-if="node.system"
+              class="shrink-0 rounded px-1 text-[10px] font-normal text-accent/80"
+            >系统</span>
           </button>
           <AppIcon
+            v-if="!node.system"
             name="edit"
             :size="14"
             class="w-5 shrink-0 cursor-pointer text-muted opacity-70 transition-opacity md:w-4 md:opacity-0 md:group-hover:opacity-70 hover:!text-accent hover:!opacity-100"
@@ -100,6 +111,7 @@ function intoClass() {
             @click.stop="api.emitAddFile(node.path)"
           />
           <AppIcon
+            v-if="!node.system"
             name="close"
             :size="14"
             class="w-5 shrink-0 cursor-pointer text-muted opacity-70 transition-opacity md:w-4 md:opacity-0 md:group-hover:opacity-60 hover:!text-danger hover:!opacity-100"

@@ -82,6 +82,7 @@ export class KeyPicker {
   private onPointerDown: ((e: PointerEvent) => void) | null = null
   private bindTimer: ReturnType<typeof setTimeout> | null = null
   private promptKey = ''
+  private sourceId = ''
 
   get isOpen() {
     return !!this.el
@@ -89,6 +90,11 @@ export class KeyPicker {
 
   get currentKey() {
     return this.promptKey
+  }
+
+  /** 最近一次 show 传入的 sourceId（用于按来源关闭） */
+  get currentSourceId() {
+    return this.sourceId
   }
 
   hide() {
@@ -107,6 +113,7 @@ export class KeyPicker {
     this.el?.remove()
     this.el = null
     this.promptKey = ''
+    this.sourceId = ''
   }
 
   show(opts: KeyPickerShowOptions) {
@@ -123,9 +130,10 @@ export class KeyPicker {
     if (!items.length) return
 
     this.promptKey = opts.promptKey || ''
+    this.sourceId = String(opts.sourceId ?? '').trim()
     const el = document.createElement('div')
     el.className = KEY_PICKER_CLASS
-    if (opts.sourceId) el.setAttribute('data-source', opts.sourceId)
+    if (this.sourceId) el.setAttribute('data-source', this.sourceId)
 
     const heading = String(opts.label ?? '').trim()
     if (heading) {

@@ -17,7 +17,7 @@ import {
   toStorageMarkdown,
 } from '../editor/blankLines'
 import { getMarkdownFieldLiteExtensions } from '../editor/markdownFieldLite'
-import { setHostTermTitle } from '../editor/extensions/term-glossary/core/shared/editorViewRef'
+import { setHostTermTitle } from '../editor/hostTermTitle'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },

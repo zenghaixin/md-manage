@@ -21,7 +21,6 @@ import {
   sanitizeTermTitle,
 } from '../model/syntax'
 import {
-  ensureLiveTermRemarkId,
   lookupLiveTermRemarkId,
 } from './termRemarkAccess'
 
@@ -30,6 +29,40 @@ function normPath(p: string): string {
     .replace(/\\/g, '/')
     .replace(/^\/+|\/+$/g, '')
     .trim()
+}
+
+/**
+ * 只读：从 Markdown 解析词条是否已有整块备注（不创建 id）。
+ */
+export function lookupTermRemarkInMarkdown(
+  markdown: string,
+  title: string,
+): { remarkId: string; description: string } {
+  const key = sanitizeTermTitle(title)
+  if (!key) return { remarkId: '', description: '' }
+
+  const { body, descriptions } = extractRemarksMeta(markdown)
+  let remarkId = ''
+
+  const re = new RegExp(TERM_BLOCK_RE.source, 'gi')
+  re.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = re.exec(body)) !== null) {
+    const rawTitle = match[1]
+    if (sanitizeTermTitle(rawTitle) !== key) continue
+    const braceInner = match[2] || ''
+    const content = match[3] || ''
+    const peeled = peelRemarkBraceFromDescription(String(content))
+    const fromBrace = parseTermRemarkIdFromBrace(braceInner)
+    remarkId = fromBrace || peeled.remarkId
+    break
+  }
+
+  if (!remarkId) return { remarkId: '', description: '' }
+  return {
+    remarkId,
+    description: String(descriptions[remarkId] ?? ''),
+  }
 }
 
 /**
@@ -88,11 +121,12 @@ export function ensureTermRemarkInMarkdown(
 
 /**
  * 按词条标题解析备注：优先当前文档；否则读 glossary.sourcePath 对应文件。
- * 定义文件尚无 remark 时会创建 id 并写回。
+ * 默认只读，不自动创建 remark（在定义块处手动添加）。
  */
 export async function resolveTermRemarkForTitle(
   title: string,
   sourcePathHint?: string,
+  opts?: { createIfMissing?: boolean },
 ): Promise<{
   remarkId: string
   description: string
@@ -101,9 +135,9 @@ export async function resolveTermRemarkForTitle(
 } | null> {
   const key = sanitizeTermTitle(title)
   if (!key) return null
+  const createIfMissing = opts?.createIfMissing === true
 
-  const liveId =
-    lookupLiveTermRemarkId(key) || ensureLiveTermRemarkId(key)
+  const liveId = lookupLiveTermRemarkId(key)
   if (liveId) {
     return {
       remarkId: liveId,
@@ -124,6 +158,16 @@ export async function resolveTermRemarkForTitle(
   if (!path) return null
 
   const { content } = await api.getFileByPath(path)
+  if (!createIfMissing) {
+    const looked = lookupTermRemarkInMarkdown(content, key)
+    if (!looked.remarkId) return null
+    return {
+      remarkId: looked.remarkId,
+      description: looked.description,
+      sourcePath: path,
+    }
+  }
+
   const ensured = ensureTermRemarkInMarkdown(content, key)
   if (!ensured.remarkId) return null
 

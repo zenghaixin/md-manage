@@ -1,16 +1,12 @@
 /**
  * 备注浮层：挂到 body，与词条预览同套 DraggableFloat + cascade 错位。
  */
-import { createApp, type App } from 'vue'
-import { getActivePinia } from 'pinia'
-import ElementPlus from 'element-plus'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import {
-  allocateCascadePlace,
-  registerCascadeFloat,
-  unregisterCascadeFloat,
-} from '../../../components/floatCascade'
-import { nextFloatZIndex } from '../../../components/floatZIndex'
+  closeFloatHost,
+  openFloatHost,
+  nextFloatZIndex,
+  type FloatHostMount,
+} from '../../../components/draggable-float'
 import RemarkFloat from './RemarkFloat.vue'
 import { getRemarkDescription } from './storage'
 
@@ -18,32 +14,13 @@ const REMARK_W = 360
 const REMARK_H = 320
 const CASCADE_ID = 'remark-float'
 
-let vueApp: App | null = null
-let rootEl: HTMLDivElement | null = null
+let floatMount: FloatHostMount | null = null
 let currentId = ''
-let hostRef: {
-  flash: () => void
-  setZIndex: (z: number) => void
-  bringFront: () => number
-  setPosition: (left: number, top: number) => void
-  getBoundingClientRect: () => DOMRect | null
-  syncDraftFromStore: () => void
-} | null = null
 
 function teardown() {
-  unregisterCascadeFloat(CASCADE_ID)
-  if (vueApp) {
-    try {
-      vueApp.unmount()
-    } catch {
-      // ignore
-    }
-    vueApp = null
-  }
-  rootEl?.remove()
-  rootEl = null
+  closeFloatHost(floatMount)
+  floatMount = null
   currentId = ''
-  hostRef = null
 }
 
 export function closeRemarkFloat() {
@@ -71,70 +48,49 @@ export function openRemarkFloat(opts: {
   if (!id) return
 
   // 同一条已打开：置顶 + 闪烁
-  if (currentId === id && vueApp && hostRef) {
-    hostRef.syncDraftFromStore()
-    hostRef.bringFront()
+  if (currentId === id && floatMount) {
+    floatMount.host.syncDraftFromStore?.()
+    floatMount.host.bringFront?.()
     return
   }
 
   teardown()
-
-  const root = document.createElement('div')
-  root.className = 'ext-remark-float-root'
-  document.body.appendChild(root)
-  rootEl = root
   currentId = id
 
-  const z = nextFloatZIndex()
-  const place = allocateCascadePlace({
-    width: REMARK_W,
-    height: REMARK_H,
-    besideRect: opts.besideRect,
-  })
   const initial =
     opts.initialDescription != null
       ? String(opts.initialDescription)
       : getRemarkDescription(id)
 
-  vueApp = createApp(RemarkFloat, {
-    remarkId: id,
-    label: String(opts.label || ''),
-    floatLeft: place.left,
-    floatTop: place.top,
-    zIndex: z,
-    sourcePath: String(opts.sourcePath || ''),
-    initialDescription: initial,
-    onClose: () => {
-      teardown()
-    },
-    onFocus: () => {
-      hostRef?.setZIndex(nextFloatZIndex())
-    },
+  let mount!: FloatHostMount
+  mount = openFloatHost({
+    cascadeId: CASCADE_ID,
+    width: REMARK_W,
+    height: REMARK_H,
+    besideRect: opts.besideRect,
+    rootClassName: 'ext-remark-float-root',
+    component: RemarkFloat,
+    props: ({ place, zIndex }) => ({
+      remarkId: id,
+      label: String(opts.label || ''),
+      floatLeft: place.left,
+      floatTop: place.top,
+      zIndex,
+      sourcePath: String(opts.sourcePath || ''),
+      initialDescription: initial,
+      onClose: () => {
+        teardown()
+      },
+      onFocus: () => {
+        mount.host.setZIndex?.(nextFloatZIndex())
+      },
+    }),
   })
-  const pinia = getActivePinia()
-  if (pinia) vueApp.use(pinia)
-  vueApp.use(ElementPlus, { locale: zhCn })
-  const instance = vueApp.mount(root) as {
-    flash?: () => void
-    setZIndex?: (z: number) => void
-    bringFront?: () => number
-    setPosition?: (left: number, top: number) => void
-    getBoundingClientRect?: () => DOMRect | null
-    syncDraftFromStore?: () => void
-  }
-  hostRef = {
-    flash: () => instance.flash?.(),
-    setZIndex: (next) => instance.setZIndex?.(next),
-    bringFront: () => instance.bringFront?.() ?? nextFloatZIndex(),
-    setPosition: (left, top) => instance.setPosition?.(left, top),
-    getBoundingClientRect: () => instance.getBoundingClientRect?.() ?? null,
-    syncDraftFromStore: () => instance.syncDraftFromStore?.(),
-  }
-  registerCascadeFloat(CASCADE_ID, () => hostRef?.getBoundingClientRect() ?? null)
+  floatMount = mount
 }
 
 export function isRemarkFloatOpen(remarkId?: string): boolean {
-  if (!vueApp) return false
+  if (!floatMount) return false
   if (!remarkId) return true
   return currentId === String(remarkId).trim()
 }

@@ -8,6 +8,10 @@ import path from 'path'
 const META_TREE = '.tree.json'
 const META_TABS = '.tabs.json'
 
+/** 词条定义系统文件夹（根级置顶、不可删/改名/调序） */
+export const GLOSSARY_ROOT_FOLDER = '词条'
+export const GLOSSARY_DEFAULT_FILE = '词条/词条.md'
+
 /**
  * @param {string} docsRoot
  * @param {(name: string) => boolean} isSafeName
@@ -15,6 +19,49 @@ const META_TABS = '.tabs.json'
  */
 export function createFsTree(docsRoot, isSafeName, glossary) {
   const treeMetaPath = path.join(docsRoot, META_TREE)
+
+  function isGlossarySystemFolder(rel) {
+    return normRel(rel) === GLOSSARY_ROOT_FOLDER
+  }
+
+  function isGlossaryDefPath(rel) {
+    const p = normRel(rel)
+    return p === GLOSSARY_ROOT_FOLDER || p.startsWith(`${GLOSSARY_ROOT_FOLDER}/`)
+  }
+
+  /** 确保系统文件夹与默认落盘文件存在，并置顶 */
+  async function ensureGlossarySystem() {
+    await ensureRoot()
+    const folderAbs = path.join(docsRoot, GLOSSARY_ROOT_FOLDER)
+    await fs.mkdir(folderAbs, { recursive: true })
+    const defaultAbs = path.join(docsRoot, ...GLOSSARY_DEFAULT_FILE.split('/'))
+    try {
+      await fs.access(defaultAbs)
+    } catch {
+      await fs.writeFile(defaultAbs, `# 词条\n\n`, 'utf-8')
+    }
+    const orderMap = await readOrderMap()
+    await syncDirOrder('', orderMap)
+    const list = orderMap[''] || []
+    if (!list.includes(GLOSSARY_ROOT_FOLDER)) {
+      list.unshift(GLOSSARY_ROOT_FOLDER)
+      orderMap[''] = list
+    } else if (list[0] !== GLOSSARY_ROOT_FOLDER) {
+      orderMap[''] = [
+        GLOSSARY_ROOT_FOLDER,
+        ...list.filter((n) => n !== GLOSSARY_ROOT_FOLDER),
+      ]
+    }
+    const childKey = GLOSSARY_ROOT_FOLDER
+    await syncDirOrder(childKey, orderMap)
+    const kids = orderMap[childKey] || []
+    const defaultName = '词条.md'
+    if (!kids.includes(defaultName)) {
+      kids.unshift(defaultName)
+      orderMap[childKey] = kids
+    }
+    await writeOrderMap(orderMap)
+  }
 
   function normRel(p) {
     return String(p ?? '')
@@ -128,12 +175,19 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     for (const n of [...folders.sort((a, b) => a.localeCompare(b, 'zh')), ...files.sort((a, b) => a.localeCompare(b, 'zh'))]) {
       if (!next.includes(n)) next.push(n)
     }
+    // 根级「词条」系统文件夹始终置顶
+    if (key === '' && next.includes(GLOSSARY_ROOT_FOLDER)) {
+      next = [
+        GLOSSARY_ROOT_FOLDER,
+        ...next.filter((n) => n !== GLOSSARY_ROOT_FOLDER),
+      ]
+    }
     orderMap[key] = next
     return next
   }
 
   async function buildTree() {
-    await ensureRoot()
+    await ensureGlossarySystem()
     const orderMap = await readOrderMap()
     let changed = false
 
@@ -149,10 +203,13 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
       for (const name of names) {
         if (folderSet.has(name)) {
           const childPath = joinRel(relDir, name)
+          const system = !relDir && name === GLOSSARY_ROOT_FOLDER
           children.push({
             type: 'folder',
             name,
             path: childPath,
+            system: system || undefined,
+            protected: system || undefined,
             children: await walk(childPath),
           })
         } else if (fileSet.has(name)) {
@@ -332,6 +389,11 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
 
   async function renameEntry(relPath, newName) {
     const rel = normRel(relPath)
+    if (isGlossarySystemFolder(rel)) {
+      throw Object.assign(new Error('系统文件夹「词条」不可重命名'), {
+        status: 403,
+      })
+    }
     const parent = parentRel(rel)
     const oldBase = baseName(rel)
     const isFile = oldBase.endsWith('.md')
@@ -382,6 +444,11 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
   async function deleteEntry(relPath) {
     const rel = normRel(relPath)
     if (!rel) throw Object.assign(new Error('不能删除根'), { status: 400 })
+    if (isGlossarySystemFolder(rel)) {
+      throw Object.assign(new Error('系统文件夹「词条」不可删除'), {
+        status: 403,
+      })
+    }
     const abs = absOf(rel)
     const st = await fs.stat(abs)
     await fs.rm(abs, { recursive: true, force: true })
@@ -417,6 +484,11 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     const from = normRel(fromPath)
     const toParent = normRel(toParentPath)
     if (!from) throw Object.assign(new Error('不能移动根'), { status: 400 })
+    if (isGlossarySystemFolder(from)) {
+      throw Object.assign(new Error('系统文件夹「词条」不可移动或调序'), {
+        status: 403,
+      })
+    }
     if (!(await existsRel(from))) {
       throw Object.assign(new Error('源不存在'), { status: 404 })
     }
@@ -498,6 +570,19 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
 
     list.splice(idx, 0, destName)
     orderMap[toParent] = list
+    // 根级系统文件夹始终置顶
+    if (toParent === '' || fromParent === '') {
+      const rootList = orderMap[''] || []
+      if (
+        rootList.includes(GLOSSARY_ROOT_FOLDER) &&
+        rootList[0] !== GLOSSARY_ROOT_FOLDER
+      ) {
+        orderMap[''] = [
+          GLOSSARY_ROOT_FOLDER,
+          ...rootList.filter((n) => n !== GLOSSARY_ROOT_FOLDER),
+        ]
+      }
+    }
     await writeOrderMap(orderMap)
 
     if (from !== destRel) {
@@ -537,5 +622,10 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     moveEntry,
     listAllMarkdownPaths,
     uniqueChildName,
+    ensureGlossarySystem,
+    isGlossaryDefPath,
+    isGlossarySystemFolder,
+    GLOSSARY_ROOT_FOLDER,
+    GLOSSARY_DEFAULT_FILE,
   }
 }

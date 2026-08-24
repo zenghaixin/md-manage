@@ -48,3 +48,13 @@ export function getAllGlobalMatchRules() {
   }))
 }
 
+/** 收集所有扩展贡献的 MarkdownField lite TipTap 扩展 */
+export function getAllMarkdownFieldLiteExtensions(): import('@tiptap/core').AnyExtension[] {
+  const out: import('@tiptap/core').AnyExtension[] = []
+  for (const ext of extensions.values()) {
+    const contributed = ext.getMarkdownFieldLiteExtensions?.()
+    if (contributed?.length) out.push(...contributed)
+  }
+  return out
+}
+

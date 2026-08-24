@@ -1,15 +1,11 @@
 /**
  * 单个词条预览弹窗：挂载 TermPreviewFloat（基于通用 DraggableFloat）。
  */
-import { createApp, type App } from 'vue'
-import { getActivePinia } from 'pinia'
-import ElementPlus from 'element-plus'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import {
-  allocateCascadePlace,
-  registerCascadeFloat,
-  unregisterCascadeFloat,
-} from '../../../../../components/floatCascade'
+  closeFloatHost,
+  openFloatHost,
+  type FloatHostMount,
+} from '../../../../../components/draggable-float'
 import { ensureTermGlossaryStyles } from '../shared/styles'
 import type {
   OpenSourceFn,
@@ -25,15 +21,8 @@ export class TermDialog {
   title: string
   private onRemoved: (title: string) => void
   private bringFront: () => number
-  private rootEl: HTMLDivElement | null = null
-  private vueApp: App | null = null
+  private floatMount: FloatHostMount | null = null
   private cascadeId = ''
-  private hostRef: {
-    flash: () => void
-    setZIndex: (z: number) => void
-    getBoundingClientRect: () => DOMRect | null
-    syncFromResolved: (term: ResolvedTerm, titles?: string[]) => void
-  } | null = null
   private currentZ = 10000
 
   constructor(
@@ -49,16 +38,16 @@ export class TermDialog {
   }
 
   get isOpen() {
-    return !!this.vueApp
+    return !!this.floatMount
   }
 
   flash() {
-    this.hostRef?.flash()
+    this.floatMount?.host.flash?.()
   }
 
   focus() {
     this.currentZ = this.bringFront()
-    this.hostRef?.setZIndex(this.currentZ)
+    this.floatMount?.host.setZIndex?.(this.currentZ)
   }
 
   show(
@@ -80,7 +69,9 @@ export class TermDialog {
         ? anchor.getBoundingClientRect()
         : null
 
-    const place = allocateCascadePlace({
+    const self = this
+    this.floatMount = openFloatHost({
+      cascadeId: this.cascadeId,
       width: PREVIEW_W,
       height: PREVIEW_H,
       anchorRect: anchorRect
@@ -91,83 +82,44 @@ export class TermDialog {
             bottom: anchorRect.bottom,
           }
         : null,
-    })
-
-    const root = document.createElement('div')
-    root.className = 'ext-term-preview-float-root'
-    document.body.appendChild(root)
-    this.rootEl = root
-
-    const self = this
-    this.vueApp = createApp(TermPreviewFloat, {
-      term: { ...term },
-      titles: [...titles],
+      rootClassName: 'ext-term-preview-float-root',
+      component: TermPreviewFloat,
       zIndex: this.currentZ,
-      floatLeft: place.left,
-      floatTop: place.top,
-      onOpenSource,
-      onOpenTerm,
-      onClose: () => {
-        self.hide(true)
-      },
-      onFocus: () => {
-        self.focus()
-      },
+      props: ({ place }) => ({
+        term: { ...term },
+        titles: [...titles],
+        zIndex: self.currentZ,
+        floatLeft: place.left,
+        floatTop: place.top,
+        onOpenSource,
+        onOpenTerm,
+        onClose: () => {
+          self.hide(true)
+        },
+        onFocus: () => {
+          self.focus()
+        },
+      }),
     })
-
-    const pinia = getActivePinia()
-    if (pinia) this.vueApp.use(pinia)
-    this.vueApp.use(ElementPlus, { locale: zhCn })
-
-    const instance = this.vueApp.mount(root) as {
-      flash?: () => void
-      setZIndex?: (z: number) => void
-      getBoundingClientRect?: () => DOMRect | null
-      syncFromResolved?: (term: ResolvedTerm, titles?: string[]) => void
-    }
-    this.hostRef = {
-      flash: () => instance.flash?.(),
-      setZIndex: (z) => instance.setZIndex?.(z),
-      getBoundingClientRect: () => instance.getBoundingClientRect?.() ?? null,
-      syncFromResolved: (t, ts) => instance.syncFromResolved?.(t, ts),
-    }
-    registerCascadeFloat(this.cascadeId, () =>
-      this.hostRef?.getBoundingClientRect() ?? null,
-    )
   }
 
   syncFromResolved(term: ResolvedTerm, titles?: string[]) {
-    if (!this.isOpen) return
+    if (!this.isOpen || !this.floatMount) return
     const nextTitle = String(term.title ?? this.title).trim() || this.title
     if (nextTitle !== this.title && this.cascadeId) {
-      unregisterCascadeFloat(this.cascadeId)
       this.title = nextTitle
       this.cascadeId = `term-preview:${this.title}`
-      registerCascadeFloat(this.cascadeId, () =>
-        this.hostRef?.getBoundingClientRect() ?? null,
-      )
+      this.floatMount.setCascadeId(this.cascadeId)
     } else {
       this.title = nextTitle
     }
-    this.hostRef?.syncFromResolved(term, titles)
+    this.floatMount.host.syncFromResolved?.(term, titles)
   }
 
   hide(notify = true) {
-    if (this.cascadeId) {
-      unregisterCascadeFloat(this.cascadeId)
-      this.cascadeId = ''
-    }
-    if (this.vueApp) {
-      try {
-        this.vueApp.unmount()
-      } catch {
-        // ignore
-      }
-      this.vueApp = null
-    }
-    this.hostRef = null
-    this.rootEl?.remove()
-    this.rootEl = null
+    closeFloatHost(this.floatMount)
+    this.floatMount = null
+    this.cascadeId = ''
     if (notify) this.onRemoved(this.title)
   }
 
