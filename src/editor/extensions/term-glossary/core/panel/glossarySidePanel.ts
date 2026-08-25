@@ -1,10 +1,14 @@
 /**
- * 右侧「词条」书签模块：常驻占位（内容后续补）。
+ * 右侧「词条」书签模块：按定义 .md 文件名分组列出词条，可搜索与跳转。
  */
+import { createApp, type App } from 'vue'
+import { getActivePinia } from 'pinia'
 import { registerRightPanelModule } from '../../../../rightPanelRegistry'
+import GlossarySidePanel from './GlossarySidePanel.vue'
 
 export const TERM_GLOSSARY_PANEL_MODULE_ID = 'term-glossary-panel'
 
+let vueApp: App | null = null
 let bound = false
 
 export function bindTermGlossaryPanel(): void {
@@ -18,16 +22,20 @@ export function bindTermGlossaryPanel(): void {
     mount(host) {
       host.replaceChildren()
       const root = document.createElement('div')
-      root.className =
-        'flex h-full min-h-0 flex-col gap-2 p-3 text-sm text-muted'
-      root.innerHTML =
-        '<p class="m-0 text-ink font-medium">词条</p>' +
-        '<p class="m-0 leading-relaxed">词条列表与检索将在此展示（占位）。</p>' +
-        '<p class="m-0 text-xs opacity-80">新建：Ctrl+Alt+T</p>'
+      root.className = 'h-full min-h-0'
       host.appendChild(root)
+      vueApp = createApp(GlossarySidePanel)
+      const pinia = getActivePinia()
+      if (pinia) vueApp.use(pinia)
+      vueApp.mount(root)
     },
     unmount() {
-      // host 由壳层清空
+      try {
+        vueApp?.unmount()
+      } catch {
+        // ignore
+      }
+      vueApp = null
     },
   })
 }

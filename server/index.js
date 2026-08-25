@@ -4,16 +4,16 @@ import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createFsTree } from './fsTree.js'
+import { createGlossaryStore } from './glossaryStore.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DOCS_ROOT = path.resolve(__dirname, '../md')
 const META_FILE = path.join(DOCS_ROOT, '.tabs.json')
-const GLOSSARY_DATA_DIR = path.resolve(
+/** @deprecated 旧全局词库目录；启动时直接删除 */
+const GLOSSARY_LEGACY_DATA_DIR = path.resolve(
   __dirname,
   '../src/editor/extensions/term-glossary/data',
 )
-/** @deprecated 迁移用；读到后拆入各类型文件并删除 */
-const GLOSSARY_LEGACY_FILE = path.join(GLOSSARY_DATA_DIR, 'glossary.json')
 /** 项目级 UI 配置（不放 md/，避免混进设定文档） */
 const APP_CONFIG_FILE = path.resolve(__dirname, '../.app-config.json')
 
@@ -78,9 +78,18 @@ async function ensureDocsRoot() {
   await fs.mkdir(DOCS_ROOT, { recursive: true })
 }
 
+/** @type {ReturnType<typeof createGlossaryStore>} */
+let glossaryStore
+
 const fsTree = createFsTree(DOCS_ROOT, isSafeName, {
-  readGlossary: () => readGlossaryFile(),
-  writeGlossary: (data) => writeGlossaryFile(data),
+  readGlossary: () => glossaryStore.readGlossaryFile(),
+  writeGlossary: (data) => glossaryStore.writeGlossaryFile(data),
+  onGlossaryTreeChanged: () => glossaryStore.rebuildIndex(),
+})
+
+glossaryStore = createGlossaryStore(DOCS_ROOT, {
+  normRel: (p) => fsTree.normRel(p),
+  listGlossaryMdEntries: () => fsTree.listGlossaryMdEntries(),
 })
 
 function sendErr(res, err) {
@@ -520,170 +529,12 @@ function emptyGlossary() {
   return { lastUpdated: '', terms: {} }
 }
 
-/** 含 basic + 全部特殊类型（与 TERM_TYPE_SPECIAL_IDS 对齐） */
-const GLOSSARY_TYPE_IDS = [
-  'basic',
-  'character',
-  'faction',
-  'class',
-  'skill',
-  'geo',
-  'event',
-  'item',
-]
-
-function glossaryTypeIds() {
-  return GLOSSARY_TYPE_IDS
-}
-
-function glossaryTypeFilePath(typeId) {
-  return path.join(GLOSSARY_DATA_DIR, `${typeId}.json`)
-}
-
-function emptyTypeFile() {
-  return { list: [], terms: {} }
-}
-
-/**
- * 单类型文件：{ list: string[], terms: Record<title, term> }
- * list = 本文件词条名称索引（与 terms 的 key 对齐）
- */
-function normalizeTypeFile(typeId, raw) {
-  const data = raw && typeof raw === 'object' ? raw : {}
-  const termsIn = data.terms && typeof data.terms === 'object' ? data.terms : {}
-  const terms = {}
-  for (const [key, term] of Object.entries(termsIn)) {
-    const title = String(term?.title ?? key).trim()
-    if (!title) continue
-    terms[title] = {
-      ...term,
-      title,
-      type: typeId,
-    }
-  }
-  let list = Array.isArray(data.list)
-    ? data.list.map((t) => String(t ?? '').trim()).filter(Boolean)
-    : []
-  // list 与 terms 对齐：缺的补上，多余的丢掉，去重保序
-  const seen = new Set()
-  const nextList = []
-  for (const title of list) {
-    if (!terms[title] || seen.has(title)) continue
-    seen.add(title)
-    nextList.push(title)
-  }
-  for (const title of Object.keys(terms)) {
-    if (seen.has(title)) continue
-    seen.add(title)
-    nextList.push(title)
-  }
-  return { list: nextList, terms }
-}
-
-async function readTypeFile(typeId) {
-  try {
-    const raw = await fs.readFile(glossaryTypeFilePath(typeId), 'utf-8')
-    return normalizeTypeFile(typeId, JSON.parse(raw || '{}'))
-  } catch (err) {
-    if (err.code === 'ENOENT') return emptyTypeFile()
-    throw err
-  }
-}
-
-async function writeTypeFile(typeId, fileData) {
-  const normalized = normalizeTypeFile(typeId, fileData)
-  await fs.mkdir(GLOSSARY_DATA_DIR, { recursive: true })
-  await fs.writeFile(
-    glossaryTypeFilePath(typeId),
-    `${JSON.stringify(normalized, null, 2)}\n`,
-    'utf-8',
-  )
-  return normalized
-}
-
-/** 旧版单文件 glossary.json → 按类型拆分（一次性） */
-async function migrateLegacyGlossaryIfNeeded() {
-  let legacy
-  try {
-    const raw = await fs.readFile(GLOSSARY_LEGACY_FILE, 'utf-8')
-    legacy = JSON.parse(raw || '{}')
-  } catch (err) {
-    if (err.code === 'ENOENT') return false
-    throw err
-  }
-  const terms =
-    legacy?.terms && typeof legacy.terms === 'object' ? legacy.terms : {}
-  await writeGlossaryFile({
-    lastUpdated: legacy?.lastUpdated || new Date().toISOString(),
-    terms,
-  })
-  try {
-    await fs.unlink(GLOSSARY_LEGACY_FILE)
-  } catch {
-    // ignore
-  }
-  try {
-    await fs.rm(path.join(GLOSSARY_DATA_DIR, 'catalog'), {
-      recursive: true,
-      force: true,
-    })
-  } catch {
-    // ignore
-  }
-  try {
-    await fs.unlink(path.join(GLOSSARY_DATA_DIR, '_meta.json'))
-  } catch {
-    // ignore
-  }
-  console.log('[glossary] migrated legacy glossary.json → data/<type>.json')
-  return true
-}
-
 async function readGlossaryFile() {
-  await migrateLegacyGlossaryIfNeeded()
-  const terms = {}
-  for (const typeId of glossaryTypeIds()) {
-    const file = await readTypeFile(typeId)
-    for (const [title, term] of Object.entries(file.terms)) {
-      terms[title] = { ...term, title, type: typeId }
-    }
-  }
-  return {
-    lastUpdated: '',
-    terms,
-  }
+  return glossaryStore.readGlossaryFile()
 }
 
 async function writeGlossaryFile(data) {
-  const terms = scrubIgnoreContexts(
-    data.terms && typeof data.terms === 'object' ? data.terms : {},
-  )
-  const lastUpdated = new Date().toISOString()
-  /** @type {Record<string, { list: string[], terms: Record<string, object> }>} */
-  const byType = Object.create(null)
-  for (const typeId of glossaryTypeIds()) {
-    byType[typeId] = { list: [], terms: {} }
-  }
-
-  for (const [key, term] of Object.entries(terms)) {
-    const title = String(term?.title ?? key).trim()
-    if (!title) continue
-    const typeId = normalizeTermType(term?.type)
-    const bucket = byType[typeId] || byType.basic
-    bucket.terms[title] = {
-      ...term,
-      title,
-      type: typeId,
-    }
-  }
-  for (const typeId of glossaryTypeIds()) {
-    const bucket = byType[typeId]
-    bucket.list = Object.keys(bucket.terms).sort((a, b) =>
-      a.localeCompare(b, 'zh'),
-    )
-    await writeTypeFile(typeId, bucket)
-  }
-  return { lastUpdated, terms }
+  return glossaryStore.writeGlossaryFile(data)
 }
 
 function normalizeIgnoreContexts(value) {
@@ -702,98 +553,6 @@ function normalizeFormerTitles(value) {
   for (const item of value) {
     const s = String(item ?? '').trim()
     if (s && !out.includes(s)) out.push(s)
-  }
-  return out
-}
-
-const TERM_TYPE_SPECIAL_IDS = new Set([
-  'character',
-  'faction',
-  'class',
-  'skill',
-  'geo',
-  'event',
-  'item',
-])
-
-function normalizeTermType(value) {
-  const raw = String(value ?? '')
-    .trim()
-    .toLowerCase()
-  if (!raw || raw === 'basic' || raw === 'generic' || raw === '普通') return 'basic'
-  if (TERM_TYPE_SPECIAL_IDS.has(raw)) return raw
-  return 'basic'
-}
-
-/** 与前端 termAttrs.ts 同语义；换 type 时只保留新类型字段 */
-const TERM_ATTR_SCHEMA = {
-  character: {
-    status: { kind: 'enum', def: 'unknown', ids: ['alive', 'dead', 'unknown'] },
-    summary: { kind: 'text' },
-  },
-  faction: {
-    scale: { kind: 'enum', def: 'other', ids: ['org', 'nation', 'force', 'other'] },
-  },
-  class: {
-    kind: { kind: 'enum', def: 'other', ids: ['combat', 'support', 'craft', 'other'] },
-  },
-  skill: {
-    kind: { kind: 'enum', def: 'other', ids: ['active', 'passive', 'other'] },
-  },
-  geo: {
-    kind: {
-      kind: 'enum',
-      def: 'other',
-      ids: ['region', 'settlement', 'landmark', 'other'],
-    },
-  },
-  event: {
-    timeLabel: { kind: 'text' },
-    status: {
-      kind: 'enum',
-      def: 'past',
-      ids: ['past', 'ongoing', 'future', 'myth'],
-    },
-  },
-  item: {
-    slot: {
-      kind: 'enum',
-      def: 'other',
-      ids: ['weapon', 'armor', 'accessory', 'consumable', 'other'],
-    },
-    rarity: {
-      kind: 'enum',
-      def: 'none',
-      ids: [
-        'common',
-        'uncommon',
-        'rare',
-        'epic',
-        'legendary',
-        'unique',
-        'none',
-      ],
-    },
-  },
-}
-
-function normalizeTermAttrs(type, raw) {
-  const termType = normalizeTermType(type)
-  const schema = TERM_ATTR_SCHEMA[termType]
-  if (!schema) return {}
-  const src =
-    raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
-  const out = {}
-  for (const [key, field] of Object.entries(schema)) {
-    if (field.kind === 'enum') {
-      const v = String(src[key] ?? '')
-        .trim()
-        .toLowerCase()
-      out[key] = field.ids.includes(v) ? v : field.def
-    } else {
-      const text = String(src[key] ?? '').trim()
-      if (text) out[key] = text
-    }
   }
   return out
 }
@@ -832,11 +591,10 @@ function scrubIgnoreContexts(terms) {
   const titles = new Set(Object.keys(terms || {}))
   const next = {}
   for (const [key, term] of Object.entries(terms || {})) {
-    const type = normalizeTermType(term?.type)
     next[key] = {
-      ...term,
-      type,
-      attrs: normalizeTermAttrs(type, term?.attrs),
+      title: String(term?.title ?? key).trim() || key,
+      description: String(term?.description ?? '').trim(),
+      sourcePath: String(term?.sourcePath ?? ''),
       ignoreContexts: normalizeIgnoreContexts(term?.ignoreContexts).filter(
         (c) => c === key || !titles.has(c),
       ),
@@ -876,13 +634,10 @@ async function scanMarkdownTerms(existingTerms = {}) {
       const title = match[1].trim()
       if (!title) continue
       const prev = existingTerms[title]
-      const type = normalizeTermType(prev?.type)
       terms[title] = {
         title,
         description: match[2].replace(/\r\n/g, '\n').trim(),
         sourcePath,
-        type,
-        attrs: normalizeTermAttrs(type, prev?.attrs),
         ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
         formerTitles: normalizeFormerTitles(prev?.formerTitles),
         pendingManualConfirm: normalizePendingManualConfirm(
@@ -899,7 +654,7 @@ function glossaryEqual(a, b) {
   return JSON.stringify(a?.terms || {}) === JSON.stringify(b?.terms || {})
 }
 
-/** 读取 glossary.json */
+/** 读取 glossary（聚合 词条/.glossary） */
 app.get('/api/glossary', async (_req, res) => {
   try {
     res.json(await readGlossaryFile())
@@ -908,7 +663,17 @@ app.get('/api/glossary', async (_req, res) => {
   }
 })
 
-/** 整表写回 glossary.json */
+/** 词条入口文件列表（新建时可选手动入口） */
+app.get('/api/glossary/entries', async (_req, res) => {
+  try {
+    await fsTree.ensureGlossarySystem()
+    res.json({ entries: await glossaryStore.listEntryPaths() })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/** 整表写回 glossary */
 app.put('/api/glossary', async (req, res) => {
   try {
     const terms = req.body?.terms
@@ -919,13 +684,10 @@ app.put('/api/glossary', async (req, res) => {
     for (const [key, term] of Object.entries(terms)) {
       const title = String(term?.title ?? key).trim()
       if (!title) continue
-      const type = normalizeTermType(term?.type)
       normalized[title] = {
         title,
         description: String(term?.description ?? '').trim(),
         sourcePath: String(term?.sourcePath ?? ''),
-        type,
-        attrs: normalizeTermAttrs(type, term?.attrs),
         ignoreContexts: normalizeIgnoreContexts(term?.ignoreContexts),
         formerTitles: normalizeFormerTitles(term?.formerTitles),
         pendingManualConfirm: normalizePendingManualConfirm(
@@ -975,15 +737,12 @@ app.patch('/api/glossary/file', async (req, res) => {
 
     const data = await readGlossaryFile()
     const nextTerms = { ...data.terms }
-    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[], type: string, attrs: object }>} */
+    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[] }>} */
     const preserved = {}
 
     for (const [key, term] of Object.entries(nextTerms)) {
       if (term?.sourcePath === sourcePath) {
-        const type = normalizeTermType(term.type)
         preserved[key] = {
-          type,
-          attrs: normalizeTermAttrs(type, term.attrs),
           ignoreContexts: normalizeIgnoreContexts(term.ignoreContexts),
           formerTitles: normalizeFormerTitles(term.formerTitles),
           pendingManualConfirm: normalizePendingManualConfirm(
@@ -1019,18 +778,10 @@ app.patch('/api/glossary/file', async (req, res) => {
           : []),
         ...(fromOld?.formerTitles || []),
       ]).filter((f) => f !== title)
-      const type = normalizeTermType(
-        fromPrev?.type || fromData?.type || fromOld?.type || item?.type,
-      )
       nextTerms[title] = {
         title,
         description: String(item?.description ?? '').trim(),
         sourcePath,
-        type,
-        attrs: normalizeTermAttrs(
-          type,
-          fromPrev?.attrs || fromData?.attrs || fromOld?.attrs,
-        ),
         // 改名时保留旧词条的 ignore（「不需要修改」回改后仍应生效）
         ignoreContexts: normalizeIgnoreContexts(
           fromPrev?.ignoreContexts ||
@@ -1268,8 +1019,6 @@ app.post('/api/glossary/rename-sync', async (req, res) => {
         title: newTitle,
         description: '',
         sourcePath: '',
-        type: 'basic',
-        attrs: {},
         ignoreContexts: [],
         formerTitles,
         pendingManualConfirm: normalizePendingManualConfirm(conflicts),
@@ -1411,13 +1160,10 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
       const prev = terms[termTitle]
       const list = normalizeIgnoreContexts(prev?.ignoreContexts)
       if (!list.includes(ctx)) list.push(ctx)
-      const type = normalizeTermType(prev?.type)
       terms[termTitle] = {
         title: termTitle,
         description: String(prev?.description ?? '').trim(),
         sourcePath: String(prev?.sourcePath || sourcePath || '').trim(),
-        type,
-        attrs: normalizeTermAttrs(type, prev?.attrs),
         ignoreContexts: list,
         formerTitles: normalizeFormerTitles(prev?.formerTitles),
         pendingManualConfirm: normalizePendingManualConfirm(
@@ -1457,7 +1203,9 @@ app.post('/api/glossary/apply-conflicts', async (req, res) => {
 })
 
 await ensureDocsRoot()
+await glossaryStore.wipeLegacyDataDir(GLOSSARY_LEGACY_DATA_DIR)
 await fsTree.ensureGlossarySystem()
+await glossaryStore.rebuildIndex()
 
 // Express 5：端口占用等错误会进回调第一个参数；若忽略会导致假「已启动」后立刻退出
 const server = app.listen(PORT, (err) => {

@@ -7,6 +7,7 @@ import { useGlossaryStore } from '../../../../../stores/glossary'
 import {
   requestReloadFilePath,
   requestSaveCurrentFile,
+  getActiveDocPath,
 } from '../../../../shellEvents'
 import { alertError } from '../../../../../composables/useDialog'
 import {
@@ -24,18 +25,9 @@ import {
   serializeTermDescriptionFromNode,
 } from '../model/serializeDesc'
 import { suppressAutoConfirmForTitle } from '../match/match'
-import {
-  normalizeTermType,
-  TERM_TYPE_BASIC,
-  type TermTypeId,
-} from '../shared/termTypes'
-import {
-  normalizeTermAttrs,
-  type TermAttrs,
-} from '../../types/termAttrs'
 import { commitTermRename } from '../rename/renameFlow'
 import { TERM_NODE_NAME } from '../shared/constants'
-import { GLOSSARY_DEFAULT_FILE } from '../shared/glossaryPaths'
+import { GLOSSARY_DEFAULT_FILE, isGlossaryDefPath, normalizeDocPath } from '../shared/glossaryPaths'
 import {
   repairTermRemarkLeak,
   replaceTermDefinition,
@@ -51,19 +43,17 @@ type CreateSession = {
   mode: 'create'
   /** 可选：有编辑器时用于定位；落盘不依赖当前文档 */
   editor?: Editor | null
-  termType: TermTypeId
   insertPos?: number
-  attrs: TermAttrs
+  /** 新建默认存储位置（词条下当前文件优先） */
+  preferredTargetPath?: string
 }
 
 type EditSession = {
   mode: 'edit'
   editor: Editor
-  termType: TermTypeId
   nodePos: number
   title: string
   description: string
-  attrs: TermAttrs
   remarkId: string
 }
 
@@ -72,8 +62,6 @@ type CatalogEditSession = {
   mode: 'catalog-edit'
   title: string
   description: string
-  termType: TermTypeId
-  attrs: TermAttrs
   sourcePath: string
   remarkId: string
 }
@@ -83,8 +71,8 @@ type Session = CreateSession | EditSession | CatalogEditSession
 type ConfirmPayload = {
   title: string
   description: string
-  termType: TermTypeId
-  attrs: TermAttrs
+  /** 新建时落盘存储位置；空则默认词条 */
+  targetPath?: string
 }
 
 let session: Session | null = null
@@ -132,8 +120,10 @@ function present() {
       mode: isCreate ? 'create' : 'edit',
       initialTitle: isCreate ? '' : s.title,
       initialDescription: isCreate ? '' : s.description,
-      initialType: s.termType,
-      initialAttrs: s.attrs,
+      initialTargetPath:
+        isCreate && s.mode === 'create'
+          ? String(s.preferredTargetPath || GLOSSARY_DEFAULT_FILE)
+          : '',
       remarkId,
       floatLeft: place.left,
       floatTop: place.top,
@@ -165,8 +155,6 @@ function closeAfterConfirm() {
 async function persistCatalogFields(opts: {
   title: string
   description: string
-  termType: TermTypeId
-  attrs: TermAttrs
   sourcePath: string
 }) {
   const store = useGlossaryStore()
@@ -177,16 +165,12 @@ async function persistCatalogFields(opts: {
       ? {
           ...prev,
           description: opts.description,
-          type: opts.termType,
-          attrs: opts.attrs,
           sourcePath: opts.sourcePath || prev.sourcePath || '',
         }
       : {
           title: opts.title,
           description: opts.description,
           sourcePath: opts.sourcePath || '',
-          type: opts.termType,
-          attrs: opts.attrs,
           ignoreContexts: [],
           formerTitles: [],
           pendingManualConfirm: [],
@@ -200,13 +184,11 @@ async function handleCatalogConfirm(
   payload: {
     title: string
     description: string
-    termType: TermTypeId
-    attrs: TermAttrs
   },
 ) {
   const store = useGlossaryStore()
   const oldTitle = sanitizeTermTitle(s.title)
-  const { title, description, termType, attrs } = payload
+  const { title, description } = payload
   const sourcePath = String(s.sourcePath || '').trim()
   const remarkId = String(s.remarkId || '').trim()
   const renamed = oldTitle !== title
@@ -245,8 +227,6 @@ async function handleCatalogConfirm(
       await persistCatalogFields({
         title,
         description,
-        termType,
-        attrs,
         sourcePath,
       })
     } else if (renamed) {
@@ -260,16 +240,12 @@ async function handleCatalogConfirm(
       await persistCatalogFields({
         title,
         description,
-        termType,
-        attrs,
         sourcePath: '',
       })
     } else {
       await persistCatalogFields({
         title,
         description,
-        termType,
-        attrs,
         sourcePath: '',
       })
     }
@@ -290,8 +266,6 @@ async function handleConfirm(payload: ConfirmPayload) {
     String(payload.description ?? '').replace(/\u00a0/g, ' '),
   )
   const description = peeled.description.trim()
-  const termType = normalizeTermType(payload.termType)
-  const attrs = normalizeTermAttrs(termType, payload.attrs)
   if (!title) {
     await alertError('请填写词条标题')
     return
@@ -302,7 +276,7 @@ async function handleConfirm(payload: ConfirmPayload) {
   }
 
   if (s.mode === 'catalog-edit') {
-    await handleCatalogConfirm(s, { title, description, termType, attrs })
+    await handleCatalogConfirm(s, { title, description })
     return
   }
 
@@ -314,7 +288,11 @@ async function handleConfirm(payload: ConfirmPayload) {
       return
     }
     try {
-      const sourcePath = GLOSSARY_DEFAULT_FILE
+      let sourcePath = normalizeDocPath(payload.targetPath || '')
+      if (!sourcePath || !isGlossaryDefPath(sourcePath) || !sourcePath.endsWith('.md')) {
+        sourcePath = GLOSSARY_DEFAULT_FILE
+      }
+      await ensureGlossaryEntryFile(sourcePath)
       let content = ''
       try {
         const file = await api.getFileByPath(sourcePath)
@@ -331,8 +309,6 @@ async function handleConfirm(payload: ConfirmPayload) {
       await persistCatalogFields({
         title,
         description,
-        termType,
-        attrs,
         sourcePath,
       })
       requestReloadFilePath(sourcePath)
@@ -368,7 +344,6 @@ async function handleConfirm(payload: ConfirmPayload) {
       pos: s.nodePos,
       title,
       description,
-      termType,
     })
     if (!replaced) {
       await alertError('更新词条失败')
@@ -386,13 +361,11 @@ async function handleConfirm(payload: ConfirmPayload) {
       const terms = {
         ...store.terms,
         [title]: prev
-          ? { ...prev, description, type: termType, attrs }
+          ? { ...prev, description }
           : {
               title,
               description,
               sourcePath: '',
-              type: termType,
-              attrs,
               ignoreContexts: [],
               formerTitles: [],
               pendingManualConfirm: [],
@@ -410,7 +383,6 @@ async function handleConfirm(payload: ConfirmPayload) {
     pos: s.nodePos,
     title,
     description,
-    termType,
   })
   if (!replaced) {
     await alertError('更新词条失败')
@@ -421,13 +393,11 @@ async function handleConfirm(payload: ConfirmPayload) {
     const terms = {
       ...store.terms,
       [title]: prev
-        ? { ...prev, description, type: termType, attrs }
+        ? { ...prev, description }
         : {
             title,
             description,
             sourcePath: '',
-            type: termType,
-            attrs,
             ignoreContexts: [],
             formerTitles: [],
             pendingManualConfirm: [],
@@ -441,6 +411,21 @@ async function handleConfirm(payload: ConfirmPayload) {
   closeAfterConfirm()
 }
 
+
+async function ensureGlossaryEntryFile(sourcePath: string) {
+  const path = normalizeDocPath(sourcePath)
+  try {
+    await api.getFileByPath(path)
+    return
+  } catch {
+    // 默认入口被删：重建；其它入口缺失则报错
+  }
+  if (path === GLOSSARY_DEFAULT_FILE) {
+    await api.createFileIn('词条', '默认词条')
+    return
+  }
+  throw new Error(`入口文件不存在：${path}`)
+}
 
 function openSession(
   next: Session,
@@ -470,28 +455,38 @@ function cursorAnchorFromEditor(editor: Editor | null | undefined): CascadeAncho
   }
 }
 
-/** 新建词条：浮层贴光标（有编辑器时）打开，确认后写入 词条/词条.md */
+/** 新建词条：浮层贴光标打开；确认后写入所选存储位置（词条下当前文件优先，否则默认词条） */
 export function openTermEditorCreate(opts: {
   editor?: Editor | null
-  termType?: TermTypeId | string
   insertPos?: number
   besideRect?: CascadeAnchor | null
+  /** 显式指定存储位置；否则若当前打开文件在词条下则用当前文件 */
+  targetPath?: string
 } = {}) {
   if (opts.editor?.isDestroyed) return
   const editor = opts.editor ?? getActiveTermEditor()
-  const termType = normalizeTermType(opts.termType ?? TERM_TYPE_BASIC)
   const beside =
     opts.besideRect ?? cursorAnchorFromEditor(editor)
   openSession(
     {
       mode: 'create',
       editor: editor ?? null,
-      termType,
-      attrs: normalizeTermAttrs(termType, {}),
       insertPos: opts.insertPos,
+      preferredTargetPath: resolveCreateTargetPath(opts.targetPath),
     },
     beside,
   )
+}
+
+function resolveCreateTargetPath(explicit?: string): string {
+  const candidates = [explicit, getActiveDocPath()]
+  for (const raw of candidates) {
+    const path = normalizeDocPath(raw || '')
+    if (path && isGlossaryDefPath(path) && path.endsWith('.md')) {
+      return path
+    }
+  }
+  return GLOSSARY_DEFAULT_FILE
 }
 
 function rectFromDom(el: Element | null | undefined): CascadeAnchor | null {
@@ -517,10 +512,6 @@ export function openTermEditorEdit(opts: {
   const title = sanitizeTermTitle(node.attrs.title) || String(node.attrs.title ?? '')
   const description = serializeTermDescriptionFromNode(node)
   const remarkId = getTermRemarkIdFromNode(node)
-  const stored = title ? useGlossaryStore().getTerm(title) : null
-  const termType = normalizeTermType(
-    node.attrs.termType || stored?.type || TERM_TYPE_BASIC,
-  )
   const beside =
     opts.besideRect ??
     rectFromDom(editor.view.nodeDOM(nodePos) as Element | null)
@@ -528,11 +519,9 @@ export function openTermEditorEdit(opts: {
     {
       mode: 'edit',
       editor,
-      termType,
       nodePos,
       title,
       description,
-      attrs: normalizeTermAttrs(termType, stored?.attrs),
       remarkId,
     },
     beside,
@@ -554,7 +543,6 @@ export function openTermEditorEditByTitle(opts: {
     void alertError(`词条「${opts.title}」不存在或尚未入库`)
     return
   }
-  const termType = normalizeTermType(stored.type || TERM_TYPE_BASIC)
   const peeled = peelRemarkBraceFromDescription(
     String(stored.description ?? ''),
   )
@@ -575,8 +563,6 @@ export function openTermEditorEditByTitle(opts: {
       mode: 'catalog-edit',
       title: key,
       description: peeled.description,
-      termType,
-      attrs: normalizeTermAttrs(termType, stored.attrs),
       sourcePath: String(stored.sourcePath ?? ''),
       remarkId,
     },

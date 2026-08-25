@@ -57,6 +57,17 @@ function normPath(sourcePath: string): string {
     .trim()
 }
 
+/** 壳层当前打开的文档路径（相对 md 根）；扩展可读，勿写业务逻辑 */
+let activeDocPath = ''
+
+export function setActiveDocPath(path: string): void {
+  activeDocPath = normPath(path)
+}
+
+export function getActiveDocPath(): string {
+  return activeDocPath
+}
+
 /** 请求打开文档（完整相对路径） */
 export function requestOpenFile(payload: OpenFilePayload): void {
   if (isUiGestureLocked()) {

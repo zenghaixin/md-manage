@@ -4,11 +4,6 @@ import { NodeSelection } from '@tiptap/pm/state'
 import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import { TERM_GLOSSARY_ID, TERM_NODE_NAME } from '../shared/constants'
 import { ensureTermGlossaryStyles } from '../shared/styles'
-import {
-  normalizeTermType,
-  TERM_TYPE_BASIC,
-  type TermTypeId,
-} from '../shared/termTypes'
 import { openTermEditorCreate } from '../panel/termEditorPanel'
 import {
   confirmDeleteSelectedTerm,
@@ -19,8 +14,8 @@ import TermNodeView from './TermNodeView.vue'
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     termGlossary: {
-      /** 打开新建词条浮层（落盘到词条/词条.md） */
-      insertTermGlossary: (termType?: TermTypeId | string) => ReturnType
+      /** 打开新建词条浮层（落盘到词条/默认词条.md） */
+      insertTermGlossary: () => ReturnType
     }
   }
 }
@@ -65,14 +60,6 @@ export const TermGlossaryNode = Node.create({
         parseHTML: (element) => element.getAttribute('data-title') || '',
         renderHTML: (attributes) => ({
           'data-title': attributes.title || '',
-        }),
-      },
-      termType: {
-        default: TERM_TYPE_BASIC,
-        parseHTML: (element) =>
-          normalizeTermType(element.getAttribute('data-term-type')),
-        renderHTML: (attributes) => ({
-          'data-term-type': normalizeTermType(attributes.termType),
         }),
       },
       /** 整块备注 id；落库：`::: term [标题] {remark:id}` */
@@ -209,13 +196,10 @@ export const TermGlossaryNode = Node.create({
   addCommands() {
     return {
       insertTermGlossary:
-        (termType = TERM_TYPE_BASIC) =>
+        () =>
         ({ editor }) => {
           if (editor.isDestroyed) return false
-          openTermEditorCreate({
-            editor,
-            termType: normalizeTermType(termType),
-          })
+          openTermEditorCreate({ editor })
           return true
         },
     }

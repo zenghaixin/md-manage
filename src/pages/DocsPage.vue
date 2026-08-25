@@ -16,6 +16,7 @@ import {
   notifyRightPanelOpened,
   getRightPanelHost,
   isUiGestureLocked,
+  setActiveDocPath,
 } from '../editor/shellEvents'
 import {
   getRightPanelModule,
@@ -52,6 +53,14 @@ const activePath = ref('')
 const busy = ref(false)
 const sidebarVisible = ref(true)
 const sidebarOpen = ref(false)
+
+watch(
+  activePath,
+  (path) => {
+    setActiveDocPath(path)
+  },
+  { immediate: true },
+)
 
 const leftWidth = ref(LEFT_DEFAULT)
 const rightWidth = ref(RIGHT_DEFAULT)

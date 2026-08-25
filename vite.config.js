@@ -26,15 +26,11 @@ export default defineConfig({
       ignored: [
         '**/md/**',
         '**/glossary.json',
-        '**/term-glossary/data/**',
+        '**/词条/.glossary/**',
         '**/.app-config.json',
         '**/.tabs.json',
         path.resolve(rootDir, 'md'),
         path.resolve(rootDir, '.app-config.json'),
-        path.resolve(
-          rootDir,
-          'src/editor/extensions/term-glossary/data',
-        ),
       ],
     },
   },

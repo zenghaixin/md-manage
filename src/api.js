@@ -139,6 +139,7 @@ export const api = {
     }),
 
   getGlossary: () => request('/api/glossary'),
+  getGlossaryEntries: () => request('/api/glossary/entries'),
   putGlossary: (body) =>
     request('/api/glossary', { method: 'PUT', body: JSON.stringify(body) }),
   syncGlossary: () => request('/api/glossary/sync', { method: 'POST' }),

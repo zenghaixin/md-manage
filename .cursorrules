@@ -45,9 +45,9 @@
 业务逻辑、词条规则、备注逻辑、AI 分析、关系图等：**写在 extensions（或独立 feature 目录）**，不堆进 MarkdownEditor / DocsPage。
 
 ## 数据文件约定
-- `term-glossary/data/<type>.json`：按类型存词条；必有 `list`（名称索引）+ `terms`（详情）
-- 前端 API 仍聚合为 `{ lastUpdated, terms }`，应用层无需改调用方式
-- 扩展落库语法与字段约定写在扩展目录与下文；改字段先改类型与 normalize
+- 词库镜像：`md/词条/.glossary/`（侧栏不展示；按下标命名，如 `0.json` / `0_0.json`）+ `index.json`（key↔path）
+- 每个入口 md 对应一个 `{key}.json`：必有 `list` + `terms`（无 type/attrs）；API 仍聚合为 `{ lastUpdated, terms }`
+- 扩展落库语法与字段约定写在扩展目录与下文
 
 # Constraints
 - 除非特别要求，不写无关 Markdown 解释。
@@ -60,21 +60,21 @@
 
 ## 目录
 - `core/`：共享引擎，按职责分子目录：
-  - `shared/`：constants、termTypes、styles、editorViewRef、flashTerm
+  - `shared/`：constants、styles、editorViewRef、flashTerm、glossaryPaths
   - `model/`：syntax、node、termRef、termOps、nestGuard、serializeDesc、TermNodeView
   - `match/`：segmenter、match、convert、highlight
   - `plugins/`：interaction 装配 + autoConfirm / click / prompt
   - `dialog/`：词条弹窗
-  - `panel/`：编辑浮层、右栏词条占位、不是词条
+  - `panel/`：编辑浮层、右栏词条、不是词条
   - `rename/`：改名与冲突抽屉
-- `types/`：每个特殊类型单独文件夹；`registry.ts` 聚合；`termAttrs.ts` normalize/摘要
-- `data/`：运行时数据 — `basic.json` / `item.json` / …（每文件含 `list` + `terms`）
 - 根 `index.ts`：组装注册
+- 运行时数据在 `md/词条/.glossary/`；**分类靠文件夹，无 type/attrs**
 
 ## 落库与目录（当前定案）
-- **定义块**只认 `md/词条/` 下 `::: term`；默认新建落盘 `词条/词条.md`
+- **定义块**只认 `md/词条/` 下 `::: term`；默认新建落盘 `词条/默认词条.md`
 - 其它路径的 `::: term` 原文显示、不解析、不入库；引用 `term[标题]` 仍可在任意 md
 - 系统文件夹「词条」：置顶、不可删/改名/调序
+- 分类用「词条」下文件夹（及入口 md）表达；已废弃 basic/特殊类型体系
 
 ## 落库语法
 ### 定义（有空格）
@@ -100,8 +100,10 @@
 - 标题经 `sanitizeTermTitle` 清洗；空标题不进词库
 - 定义块不完整（无标题或空描述）且光标不在块内 → 整块标红提示
 
-## glossary 落库（data/<type>.json）
-每个类型一个文件，例如 `data/item.json`：
+## glossary 落库（md/词条/.glossary）
+- 文件名按下标镜像侧栏树序：`词条/默认词条.md` → `0.json`；有默认词条时 `词条/世界观/历史事件.md` → `1_0.json`
+- `index.json`：`{ version, entries: [{ key, path }] }`；树增删/调序时重建并改名 json
+- 每个 `{key}.json` 形如：
 ```json
 {
   "list": ["测试1"],
@@ -109,9 +111,7 @@
     "测试1": {
       "title": "测试1",
       "description": "...",
-      "sourcePath": "...",
-      "type": "item",
-      "attrs": { "slot": "weapon", "rarity": "unique" },
+      "sourcePath": "词条/默认词条.md",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": []
@@ -120,31 +120,21 @@
 }
 ```
 - `list`：本文件词条名称索引（必有）；与 `terms` 的 key 对齐
-- `terms`：完整词条详情
-- 普通词条进 `basic.json`；API 仍聚合为单一 `terms` 表给前端
-- `type`：`basic` 或 `character` / `faction` / `class` / `skill` / `geo` / `event` / `item`
-- `attrs`：按 `type` 解释；schema 见 `types/termAttrs.ts` / 各 `types/<name>/`
-  - character: `status`、可选 `summary`
-  - faction: `scale`
-  - class / skill / geo: `kind`
-  - event: `timeLabel`、`status`
-  - item: `slot`、`rarity`
-- 特殊类型：`types/<name>/index.ts`；在 `types/registry.ts` 登记；type normalize：`core/termTypes.ts`
-- 插入：`Mod-Alt-t`（全局）→ 直接打开新建浮层（类型在浮层内下拉，默认普通）→ 确认后**只**追加到 `词条/词条.md`，不插当前文引用、不跳转
-- 定义块只读展示类型标签 + attrs 摘要；选中后右上角「编辑 / 删除」；编辑开浮层（贴定义块或预览浮层右侧）
-- 改名：旧名进 `formerTitles`，`ignoreContexts` 清空；已确认 `term[旧]` 全库改为 `term[新]`；`attrs` 随词条保留
-- 曾用名仅提示不自动改；新名撞正文 → 右侧冲突抽屉（批量确认 / 自动或选字 ignore）
-- 新增标题撞他人曾用名 → 确认沿用旧词条或新建（新建则从旧词 formerTitles 删除）
-- `pendingManualConfirm`：改名扫描写入的待人工确认列表；非空时该标题不自动确认；处理完清空
+- `terms`：完整词条详情（无 `type`/`attrs`）；API 聚合为单一 `terms` 表给前端
+- 插入：`Mod-Alt-t`（全局）→ 新建浮层（可选「存储位置」）→ 确认后追加到所选 md，不插当前文引用、不跳转；缺默认文件则重建
+- 定义块只读展示标题 + 描述；选中后右上角「编辑 / 删除」
+- 改名：旧名进 `formerTitles`；已确认 `term[旧]` 全库改为 `term[新]`
+- 曾用名仅提示不自动改；新名撞正文 → 右侧冲突抽屉
+- `pendingManualConfirm`：改名扫描写入的待人工确认列表；非空时该标题不自动确认
 
 ## 关键文件
-- `core/`：语法、匹配、改名、确认、`termTypes` normalize 等共享引擎（纯代码）
-- `types/<name>/`：各特殊类型模块；`registry.ts` 聚合；`termAttrs.ts` normalize/摘要
-- `data/<type>.json`：按类型词库（`list` 名称索引 + `terms` 详情）
-- `stores/glossary.ts`、`server/index.js`（读写时拆分/聚合各类型文件）
+- `core/`：语法、匹配、改名、确认等共享引擎
+- `md/词条/.glossary/`：下标镜像词库 + `index.json`
+- `stores/glossary.ts`、`server/glossaryStore.js`（读写聚合）
 
 ## API
 - GET/PUT `/api/glossary`
+- GET `/api/glossary/entries`（入口 md 列表，供新建下拉）
 - POST `/api/glossary/sync`
 - PATCH `/api/glossary/file`
 - POST `/api/glossary/rename-sync`
@@ -155,5 +145,5 @@
 - 右栏备注面板经 `rightPanelRegistry` 挂载；细节以该目录代码为准
 
 # 规划中能力（见 `待处理.md`，未实现勿当已有行为）
-- 右栏按类型列表、关系图、事件总览、AI 只读分析等
+- 关系图、事件总览、AI 只读分析等
 - 实现时仍按「扩展 + 右栏模块 + shellEvents」接入，不改壳业务化

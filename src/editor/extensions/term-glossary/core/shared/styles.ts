@@ -120,32 +120,6 @@ html.dark .ext-term-node.is-flash,
   margin-bottom: 0.15em;
 }
 
-.ext-term-type-badge {
-  flex-shrink: 0;
-  padding: 0.05em 0.4em;
-  border: 1px solid color-mix(in srgb, var(--accent, #0d6e6e) 40%, var(--border, #c5d0d8));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-soft, #d4ecec) 80%, transparent);
-  color: var(--accent, #0d6e6e);
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: 0.02em;
-  user-select: none;
-  pointer-events: none;
-}
-
-.ext-term-attrs-summary {
-  margin: 0 0 0.25em;
-  padding: 0;
-  color: var(--muted, #5a6b75);
-  font-size: 0.75rem;
-  line-height: 1.35;
-  letter-spacing: 0.02em;
-  user-select: none;
-  pointer-events: none;
-}
-
 .ext-term-label {
   display: none;
 }

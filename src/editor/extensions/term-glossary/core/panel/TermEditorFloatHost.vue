@@ -15,8 +15,7 @@ const props = defineProps({
   mode: { type: String, default: 'create' },
   initialTitle: { type: String, default: '' },
   initialDescription: { type: String, default: '' },
-  initialType: { type: String, default: 'basic' },
-  initialAttrs: { type: Object, default: () => ({}) },
+  initialTargetPath: { type: String, default: '' },
   remarkId: { type: String, default: '' },
   floatLeft: { type: Number, default: null },
   floatTop: { type: Number, default: null },
@@ -138,8 +137,7 @@ defineExpose({
       :mode="mode"
       :initial-title="initialTitle"
       :initial-description="initialDescription"
-      :initial-type="initialType"
-      :initial-attrs="initialAttrs"
+      :initial-target-path="initialTargetPath"
       :show-heading="false"
       :show-actions="false"
       :show-desc-toggle="false"

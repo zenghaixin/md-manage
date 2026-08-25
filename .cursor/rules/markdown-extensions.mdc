@@ -59,7 +59,6 @@ extensions/<id>/
     model/          # 语法、TipTap 节点
     plugins/        # 交互插件
     panel/          # 浮层、右栏相关
-  types/            # 本扩展类型 schema（若有）
 ```
 
 参考：`term-glossary/`、`remark/`。

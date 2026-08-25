@@ -14,7 +14,6 @@ import {
   getTermRemarkIdFromNode,
   serializeTermDescriptionFromNode,
 } from './serializeDesc'
-import { normalizeTermType, type TermTypeId } from '../shared/termTypes'
 import { getActiveTermEditor } from '../shared/editorViewRef'
 
 /** 当前顶层块之后（「当前行下一行」） */
@@ -59,13 +58,12 @@ function findTermPosByTitleNear(
   return found
 }
 
-/** 在 at 处插入定义块，并写入 termType */
+/** 在 at 处插入定义块 */
 export function insertTermDefinition(
   editor: Editor,
   opts: {
     title: string
     description: string
-    termType: TermTypeId | string
     at: number
   },
 ): boolean {
@@ -75,7 +73,6 @@ export function insertTermDefinition(
   const description = String(opts.description ?? '')
     .replace(/\u00a0/g, ' ')
     .trim()
-  const termType = normalizeTermType(opts.termType)
   const at = clampPos(editor, opts.at)
   const md = formatTermSource(title, description)
 
@@ -94,7 +91,6 @@ export function insertTermDefinition(
     editor.state.tr.setNodeMarkup(pos, undefined, {
       ...node.attrs,
       title,
-      termType,
     }),
   )
   try {
@@ -105,14 +101,13 @@ export function insertTermDefinition(
   return true
 }
 
-/** 用新标题/描述/类型替换已有定义块 */
+/** 用新标题/描述替换已有定义块 */
 export function replaceTermDefinition(
   editor: Editor,
   opts: {
     pos: number
     title: string
     description: string
-    termType: TermTypeId | string
     remarkId?: string
   },
 ): boolean {
@@ -126,7 +121,6 @@ export function replaceTermDefinition(
     String(opts.description ?? '').replace(/\u00a0/g, ' '),
   )
   const description = peeled.description.trim()
-  const termType = normalizeTermType(opts.termType)
   const remarkId =
     opts.remarkId !== undefined
       ? String(opts.remarkId ?? '').trim()
@@ -151,7 +145,6 @@ export function replaceTermDefinition(
     editor.state.tr.setNodeMarkup(pos, undefined, {
       ...next.attrs,
       title,
-      termType,
       remarkId,
     }),
   )
@@ -174,7 +167,6 @@ export function clearTermBlockRemarkAt(view: EditorView, pos: number): boolean {
     pos,
     title,
     description: serializeTermDescriptionFromNode(node),
-    termType: node.attrs.termType,
     remarkId: '',
   })
 }
@@ -201,12 +193,10 @@ export function repairTermRemarkLeak(
 
   const title =
     sanitizeTermTitle(node.attrs.title) || String(node.attrs.title ?? '')
-  const termType = normalizeTermType(node.attrs.termType)
   const ok = replaceTermDefinition(editor, {
     pos,
     title,
     description: cleanDesc,
-    termType,
     remarkId,
   })
   if (!ok) return pos

@@ -33,21 +33,6 @@ export { TermGlossaryNode } from './core/model/node'
 export { TermRefNode } from './core/model/termRef'
 export { TermGlossaryInteraction } from './core/plugins/interaction'
 export { TERM_GLOSSARY_STYLES } from './core/shared/styles'
-export {
-  normalizeTermType,
-  TERM_TYPE_BASIC,
-  TERM_TYPE_SPECIALS,
-  termTypeLabel,
-  isSpecialTermType,
-} from './core/shared/termTypes'
-export type { TermTypeId, TermTypeSpecialId } from './core/shared/termTypes'
-export {
-  normalizeTermAttrs,
-  termAttrsSummary,
-  termAttrFieldsForType,
-  TERM_ATTR_FIELDS,
-} from './types/termAttrs'
-export type { TermAttrs, TermAttrFieldDef } from './types/termAttrs'
 
 function collectEntries(
   nodes?: ExtensionNode[],

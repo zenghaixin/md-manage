@@ -1,30 +1,26 @@
 <script setup>
 /**
  * 词条定义表单：新建 / 编辑；确认才落盘，取消丢弃。
+ * 分类由「词条」下文件夹体现，面板不再选类型。
  * 描述区使用通用 MarkdownField（lite）。
  */
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import MarkdownField from '../../../../../components/MarkdownField.vue'
-import {
-  TERM_TYPE_BASIC,
-  TERM_TYPE_SPECIALS,
-  normalizeTermType,
-  termTypeLabel,
-} from '../shared/termTypes'
-import {
-  normalizeTermAttrs,
-  termAttrFieldsForType,
-} from '../../types/termAttrs'
+import { api } from '../../../../../api'
 import { peelRemarkBraceFromDescription } from '../model/syntax'
 import { setHostTermTitle } from '../shared/editorViewRef'
 import { ensureTermGlossaryStyles } from '../shared/styles'
+import {
+  GLOSSARY_DEFAULT_FILE,
+  glossaryEntryLabel,
+} from '../shared/glossaryPaths'
 
 const props = defineProps({
   mode: { type: String, default: 'create' },
   initialTitle: { type: String, default: '' },
   initialDescription: { type: String, default: '' },
-  initialType: { type: String, default: TERM_TYPE_BASIC },
-  initialAttrs: { type: Object, default: () => ({}) },
+  /** 新建时默认存储位置（词条下当前文件 / 默认词条） */
+  initialTargetPath: { type: String, default: '' },
   showHeading: { type: Boolean, default: true },
   /** 是否在面板内渲染取消/确认（浮层宿主可改到 footer） */
   showActions: { type: Boolean, default: true },
@@ -40,62 +36,93 @@ function cleanDesc(raw) {
 
 const title = ref(String(props.initialTitle || ''))
 const description = ref(cleanDesc(props.initialDescription))
-const termType = ref(normalizeTermType(props.initialType))
-const attrsDraft = reactive({})
 const busy = ref(false)
 const mdFieldRef = ref(null)
+/** 新建落盘位置；优先 initialTargetPath（词条下当前文件） */
+const targetPath = ref(
+  String(props.initialTargetPath || '').trim() || GLOSSARY_DEFAULT_FILE,
+)
+/** @type {import('vue').Ref<Array<{ path: string, label: string }>>} */
+const entryOptions = ref([])
 
 ensureTermGlossaryStyles()
 
-const emit = defineEmits(['update:ui'])
-
-function fillAttrsDraft(type, raw) {
-  const normalized = normalizeTermAttrs(type, raw)
-  const fields = termAttrFieldsForType(type)
-  for (const key of Object.keys(attrsDraft)) {
-    delete attrsDraft[key]
+function resolvePreferredTarget(list) {
+  const preferred =
+    String(props.initialTargetPath || '').trim() || GLOSSARY_DEFAULT_FILE
+  if (list.some((e) => e.path === preferred)) return preferred
+  if (list.some((e) => e.path === GLOSSARY_DEFAULT_FILE)) {
+    return GLOSSARY_DEFAULT_FILE
   }
-  for (const field of fields) {
-    if (field.kind === 'enum') {
-      attrsDraft[field.key] = normalized[field.key] || field.defaultValue
-    } else {
-      attrsDraft[field.key] = normalized[field.key] || ''
+  return list[0]?.path || preferred
+}
+
+async function loadEntryOptions() {
+  if (props.mode !== 'create') return
+  try {
+    const data = await api.getGlossaryEntries()
+    const list = Array.isArray(data?.entries) ? data.entries : []
+    entryOptions.value = list
+      .map((e) => ({
+        path: String(e.path || ''),
+        label: String(e.label || glossaryEntryLabel(e.path) || e.path),
+      }))
+      .filter((e) => e.path)
+    const preferred =
+      String(props.initialTargetPath || '').trim() || GLOSSARY_DEFAULT_FILE
+    // 当前文件尚未进索引时仍展示可选
+    if (
+      preferred &&
+      preferred.endsWith('.md') &&
+      !entryOptions.value.some((e) => e.path === preferred)
+    ) {
+      entryOptions.value = [
+        {
+          path: preferred,
+          label: glossaryEntryLabel(preferred),
+        },
+        ...entryOptions.value,
+      ]
     }
+    targetPath.value = resolvePreferredTarget(entryOptions.value)
+  } catch (err) {
+    console.warn('[term-editor] load entry options failed:', err)
+    const preferred =
+      String(props.initialTargetPath || '').trim() || GLOSSARY_DEFAULT_FILE
+    entryOptions.value = [
+      {
+        path: preferred,
+        label: glossaryEntryLabel(preferred),
+      },
+    ]
+    targetPath.value = preferred
   }
 }
 
-fillAttrsDraft(termType.value, props.initialAttrs)
+onMounted(() => {
+  void loadEntryOptions()
+})
 
 watch(
-  () => [
-    props.initialTitle,
-    props.initialDescription,
-    props.initialType,
-    props.initialAttrs,
-  ],
+  () => props.mode,
   () => {
-    title.value = String(props.initialTitle || '')
-    description.value = cleanDesc(props.initialDescription)
-    termType.value = normalizeTermType(props.initialType)
-    fillAttrsDraft(termType.value, props.initialAttrs)
+    if (props.mode === 'create') void loadEntryOptions()
   },
 )
 
-watch(termType, (next, prev) => {
-  if (normalizeTermType(next) === normalizeTermType(prev)) return
-  fillAttrsDraft(next, {})
-})
+const emit = defineEmits(['update:ui'])
+
+watch(
+  () => [props.initialTitle, props.initialDescription],
+  () => {
+    title.value = String(props.initialTitle || '')
+    description.value = cleanDesc(props.initialDescription)
+  },
+)
 
 const heading = computed(() =>
   props.mode === 'edit' ? '编辑词条' : '新建词条',
 )
-
-const typeOptions = computed(() => [
-  { id: TERM_TYPE_BASIC, label: termTypeLabel(TERM_TYPE_BASIC) },
-  ...TERM_TYPE_SPECIALS.map((t) => ({ id: t.id, label: t.label })),
-])
-
-const attrFields = computed(() => termAttrFieldsForType(termType.value))
 
 const canSubmit = computed(
   () =>
@@ -130,7 +157,6 @@ async function confirm() {
   if (typeof flushed === 'string') description.value = flushed
   busy.value = true
   try {
-    const type = normalizeTermType(termType.value)
     const peeled = peelRemarkBraceFromDescription(
       String(description.value || '').trim(),
     )
@@ -138,8 +164,10 @@ async function confirm() {
     await props.onConfirm?.({
       title: String(title.value || '').trim(),
       description: peeled.description,
-      termType: type,
-      attrs: normalizeTermAttrs(type, { ...attrsDraft }),
+      targetPath:
+        props.mode === 'create'
+          ? String(targetPath.value || GLOSSARY_DEFAULT_FILE)
+          : undefined,
     })
   } finally {
     busy.value = false
@@ -169,15 +197,18 @@ defineExpose({
       <h3 class="m-0 text-sm font-semibold">{{ heading }}</h3>
     </div>
 
-    <label class="ext-term-editor-field shrink-0">
-      <span class="ext-term-editor-label">类型</span>
-      <select v-model="termType" class="ext-term-editor-input">
+    <label
+      v-if="mode === 'create'"
+      class="ext-term-editor-field shrink-0"
+    >
+      <span class="ext-term-editor-label">存储位置</span>
+      <select v-model="targetPath" class="ext-term-editor-input">
         <option
-          v-for="opt in typeOptions"
-          :key="opt.id"
-          :value="opt.id"
+          v-for="opt in entryOptions"
+          :key="opt.path"
+          :value="opt.path"
         >
-          {{ opt.label }}
+          {{ opt.label }}（{{ opt.path }}）
         </option>
       </select>
     </label>
@@ -192,37 +223,6 @@ defineExpose({
         maxlength="80"
       >
     </label>
-
-    <template v-if="attrFields.length">
-      <label
-        v-for="field in attrFields"
-        :key="field.key"
-        class="ext-term-editor-field shrink-0"
-      >
-        <span class="ext-term-editor-label">{{ field.label }}</span>
-        <select
-          v-if="field.kind === 'enum'"
-          v-model="attrsDraft[field.key]"
-          class="ext-term-editor-input"
-        >
-          <option
-            v-for="opt in field.options || []"
-            :key="opt.id"
-            :value="opt.id"
-          >
-            {{ opt.label }}
-          </option>
-        </select>
-        <input
-          v-else
-          v-model="attrsDraft[field.key]"
-          class="ext-term-editor-input"
-          type="text"
-          :placeholder="field.key === 'timeLabel' ? '如：第三纪元末' : '可选'"
-          maxlength="120"
-        >
-      </label>
-    </template>
 
     <MarkdownField
       ref="mdFieldRef"

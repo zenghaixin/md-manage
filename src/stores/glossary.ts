@@ -1,5 +1,6 @@
 /**
- * 全局词条 Store：读写按类型拆分的 data/<type>.json（API 聚合），并与 Markdown 中的 ::: term 同步。
+ * 全局词条 Store：读写 API 聚合的 `{ lastUpdated, terms }`（后端镜像到 md/词条/.glossary），并与 Markdown 中的 ::: term 同步。
+ * 分类靠「词条」下文件夹；词条对象不再含 type/attrs。
  */
 import { defineStore } from 'pinia'
 import { api } from '../api'
@@ -14,14 +15,6 @@ import {
   sanitizeTermTitle,
   type PendingConflictItem,
 } from '../editor/extensions/term-glossary/core/model/syntax'
-import {
-  normalizeTermType,
-  type TermTypeId,
-} from '../editor/extensions/term-glossary/core/shared/termTypes'
-import {
-  normalizeTermAttrs,
-  type TermAttrs,
-} from '../editor/extensions/term-glossary/types/termAttrs'
 import { syncSegmenterTitles } from '../editor/extensions/term-glossary/core/match/segmenter'
 import { queueTermFlash } from '../editor/extensions/term-glossary/core/shared/flashTerm'
 
@@ -31,10 +24,6 @@ export interface GlossaryTerm {
   title: string
   description: string
   sourcePath: string
-  /** 词条类型；缺省 / 旧数据 = basic */
-  type: TermTypeId
-  /** 按 type 解释的扩展字段；basic = {} */
-  attrs: TermAttrs
   ignoreContexts: string[]
   /** 曾用名：仅提示，不自动改文案 */
   formerTitles: string[]
@@ -53,14 +42,11 @@ export interface GlossaryFile {
 function normalizeTerm(raw: Partial<GlossaryTerm> & { title?: string }): GlossaryTerm | null {
   const title = sanitizeTermTitle(raw.title)
   if (!title) return null
-  const type = normalizeTermType(raw.type)
   return {
     title,
     description: peelRemarkBraceFromDescription(String(raw.description ?? ''))
       .description,
     sourcePath: String(raw.sourcePath ?? ''),
-    type,
-    attrs: normalizeTermAttrs(type, raw.attrs),
     ignoreContexts: normalizeIgnoreContexts(raw.ignoreContexts),
     formerTitles: normalizeFormerTitles(raw.formerTitles).filter((f) => f !== title),
     pendingManualConfirm: normalizePendingManualConfirm(raw.pendingManualConfirm),
@@ -73,11 +59,8 @@ function scrubIgnoreContexts(
   const titles = new Set(Object.keys(terms))
   const next: Record<string, GlossaryTerm> = {}
   for (const [key, term] of Object.entries(terms)) {
-    const type = normalizeTermType(term.type)
     next[key] = {
       ...term,
-      type,
-      attrs: normalizeTermAttrs(type, term.attrs),
       // 允许 ignore === 自身标题（点 × 且两侧无邻字时）；剔除指向其它词条标题的脏数据
       ignoreContexts: (term.ignoreContexts || []).filter(
         (c) => c === key || !titles.has(c),
@@ -202,53 +185,15 @@ export const useGlossaryStore = defineStore('glossary', {
       ).filter((f) => f !== to)
 
       if (from !== to) delete terms[from]
-      const type = normalizeTermType(prev?.type)
       terms[to] = {
         title: to,
         description,
         sourcePath: sourcePath || prev?.sourcePath || '',
-        type,
-        attrs: normalizeTermAttrs(type, prev?.attrs),
         ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
         formerTitles: former,
         pendingManualConfirm: [],
       }
       return scrubIgnoreContexts(terms)
-    },
-
-    /**
-     * 首次写下标题或插入时写入类型；已有词条则更新 type（不改描述）。
-     * 换 type 时按新类型重新 normalize attrs。
-     */
-    async upsertTermType(
-      title: string,
-      termType: TermTypeId | string,
-      sourcePath = '',
-    ) {
-      const key = sanitizeTermTitle(title)
-      if (!key) return
-      const type = normalizeTermType(termType)
-      const prev = this.terms[key]
-      const terms: Record<string, GlossaryTerm> = {
-        ...this.terms,
-        [key]: prev
-          ? {
-              ...prev,
-              type,
-              attrs: normalizeTermAttrs(type, prev.attrs),
-            }
-          : {
-              title: key,
-              description: '',
-              sourcePath: String(sourcePath || ''),
-              type,
-              attrs: normalizeTermAttrs(type, {}),
-              ignoreContexts: [],
-              formerTitles: [],
-              pendingManualConfirm: [],
-            },
-      }
-      await this.persistTerms(terms)
     },
 
     /** 删除词条条目（定义块删除时调用） */

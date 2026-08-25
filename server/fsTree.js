@@ -4,18 +4,23 @@
  */
 import fs from 'fs/promises'
 import path from 'path'
+import {
+  GLOSSARY_ROOT as GLOSSARY_ROOT_FOLDER,
+  GLOSSARY_DEFAULT_FILE,
+  GLOSSARY_DEFAULT_MD,
+} from './glossaryStore.js'
 
 const META_TREE = '.tree.json'
 const META_TABS = '.tabs.json'
 
-/** 词条定义系统文件夹（根级置顶、不可删/改名/调序） */
-export const GLOSSARY_ROOT_FOLDER = '词条'
-export const GLOSSARY_DEFAULT_FILE = '词条/词条.md'
-
 /**
  * @param {string} docsRoot
  * @param {(name: string) => boolean} isSafeName
- * @param {{ readGlossary: () => Promise<any>, writeGlossary: (data: any) => Promise<any> }} glossary
+ * @param {{
+ *   readGlossary: () => Promise<any>
+ *   writeGlossary: (data: any) => Promise<any>
+ *   onGlossaryTreeChanged?: () => Promise<void>
+ * }} glossary
  */
 export function createFsTree(docsRoot, isSafeName, glossary) {
   const treeMetaPath = path.join(docsRoot, META_TREE)
@@ -29,6 +34,14 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     return p === GLOSSARY_ROOT_FOLDER || p.startsWith(`${GLOSSARY_ROOT_FOLDER}/`)
   }
 
+  async function notifyGlossaryTreeChanged() {
+    try {
+      await glossary.onGlossaryTreeChanged?.()
+    } catch (err) {
+      console.warn('[fsTree] glossary tree sync failed:', err?.message || err)
+    }
+  }
+
   /** 确保系统文件夹与默认落盘文件存在，并置顶 */
   async function ensureGlossarySystem() {
     await ensureRoot()
@@ -38,7 +51,7 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     try {
       await fs.access(defaultAbs)
     } catch {
-      await fs.writeFile(defaultAbs, `# 词条\n\n`, 'utf-8')
+      await fs.writeFile(defaultAbs, `# 默认词条\n\n`, 'utf-8')
     }
     const orderMap = await readOrderMap()
     await syncDirOrder('', orderMap)
@@ -55,12 +68,16 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     const childKey = GLOSSARY_ROOT_FOLDER
     await syncDirOrder(childKey, orderMap)
     const kids = orderMap[childKey] || []
-    const defaultName = '词条.md'
-    if (!kids.includes(defaultName)) {
-      kids.unshift(defaultName)
-      orderMap[childKey] = kids
+    const defaultName = GLOSSARY_DEFAULT_MD
+    let nextKids = [...kids]
+    if (!nextKids.includes(defaultName)) {
+      nextKids = [defaultName, ...nextKids]
+    } else if (nextKids[0] !== defaultName) {
+      nextKids = [defaultName, ...nextKids.filter((n) => n !== defaultName)]
     }
+    orderMap[childKey] = nextKids
     await writeOrderMap(orderMap)
+    await notifyGlossaryTreeChanged()
   }
 
   function normRel(p) {
@@ -313,6 +330,9 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     }
     orderMap[rel] = orderMap[rel] || []
     await writeOrderMap(orderMap)
+    if (isGlossaryDefPath(rel) || isGlossaryDefPath(parent)) {
+      await notifyGlossaryTreeChanged()
+    }
     return { path: rel, name: finalName }
   }
 
@@ -338,6 +358,9 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
       list.push(finalName)
       orderMap[parent] = list
       await writeOrderMap(orderMap)
+    }
+    if (isGlossaryDefPath(rel) || isGlossaryDefPath(parent)) {
+      await notifyGlossaryTreeChanged()
     }
     return { path: rel, name: finalName }
   }
@@ -438,6 +461,13 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     }
     await writeOrderMap(orderMap)
     await remapGlossaryPaths(remapPrefix(rel, nextRel))
+    if (
+      isGlossaryDefPath(rel) ||
+      isGlossaryDefPath(nextRel) ||
+      isGlossaryDefPath(parent)
+    ) {
+      await notifyGlossaryTreeChanged()
+    }
     return { path: nextRel, name: targetName }
   }
 
@@ -465,6 +495,9 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
       if (s === rel || s.startsWith(rel + '/')) return ''
       return null
     })
+    if (isGlossaryDefPath(rel) || isGlossaryDefPath(parent)) {
+      await notifyGlossaryTreeChanged()
+    }
     return { ok: true, wasDirectory: st.isDirectory() }
   }
 
@@ -588,6 +621,14 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     if (from !== destRel) {
       await remapGlossaryPaths(remapPrefix(from, destRel))
     }
+    if (
+      isGlossaryDefPath(from) ||
+      isGlossaryDefPath(destRel) ||
+      isGlossaryDefPath(fromParent) ||
+      isGlossaryDefPath(toParent)
+    ) {
+      await notifyGlossaryTreeChanged()
+    }
 
     return { path: destRel, name: destName, parentPath: toParent }
   }
@@ -606,6 +647,46 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     return out
   }
 
+  /**
+   * 「词条」下全部 md 的下标 key（与侧栏顺序一致）。
+   * 例：词条/世界观/历史事件.md → 0_0
+   */
+  async function listGlossaryMdEntries() {
+    await ensureRoot()
+    const orderMap = await readOrderMap()
+    /** @type {Array<{ key: string, path: string }>} */
+    const out = []
+
+    async function walk(relDir, prefixIndices) {
+      const key = normRel(relDir)
+      const names = await syncDirOrder(key, orderMap)
+      const { folders, files } = await listRawChildren(key)
+      const folderSet = new Set(folders)
+      const fileSet = new Set(files)
+      let i = 0
+      for (const name of names) {
+        if (folderSet.has(name)) {
+          await walk(joinRel(key, name), [...prefixIndices, i])
+          i += 1
+          continue
+        }
+        if (fileSet.has(name)) {
+          out.push({
+            key: [...prefixIndices, i].join('_'),
+            path: joinRel(key, name),
+          })
+          i += 1
+        }
+      }
+    }
+
+    if (await existsRel(GLOSSARY_ROOT_FOLDER)) {
+      await walk(GLOSSARY_ROOT_FOLDER, [])
+    }
+    await writeOrderMap(orderMap)
+    return out
+  }
+
   return {
     normRel,
     joinRel,
@@ -621,6 +702,7 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
     deleteEntry,
     moveEntry,
     listAllMarkdownPaths,
+    listGlossaryMdEntries,
     uniqueChildName,
     ensureGlossarySystem,
     isGlossaryDefPath,

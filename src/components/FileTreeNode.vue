@@ -82,11 +82,13 @@ function intoClass() {
               :size="16"
               class="text-accent"
             />
-            <span class="min-w-0 flex-1 truncate font-medium select-none">{{ node.name }}</span>
-            <span
-              v-if="node.system"
-              class="shrink-0 rounded px-1 text-[10px] font-normal text-accent/80"
-            >系统</span>
+            <span class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+              <span class="min-w-0 truncate font-medium select-none">{{ node.name }}</span>
+              <span
+                v-if="node.system"
+                class="shrink-0 rounded px-1 text-[10px] font-normal text-accent/80"
+              >系统</span>
+            </span>
           </button>
           <AppIcon
             v-if="!node.system"

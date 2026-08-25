@@ -5,47 +5,22 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { NodeSelection } from '@tiptap/pm/state'
 import { NodeViewContent, NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
-import { storeToRefs } from 'pinia'
 import AppIcon from '../../../../../components/AppIcon.vue'
 import { FLASH_MS, registerTermFlashHandle } from '../shared/flashTerm'
 import { openTermEditorEdit } from '../panel/termEditorPanel'
 import { confirmDeleteTermDefinition } from './termOps'
 import { sanitizeTermTitle } from './syntax'
-import { normalizeTermType, termTypeLabel } from '../shared/termTypes'
-import { termAttrsSummary } from '../../types/termAttrs'
-import { useGlossaryStore } from '../../../../../stores/glossary'
 
 const props = defineProps(nodeViewProps)
 
 let stopFlashRegister = null
 let flashAnim = null
 
-const glossary = useGlossaryStore()
-const { terms } = storeToRefs(glossary)
-
 const titleText = computed(
   () =>
     sanitizeTermTitle(props.node.attrs.title) ||
     String(props.node.attrs.title ?? '').trim() ||
     '（未命名）',
-)
-
-const storedTerm = computed(() => {
-  const key = sanitizeTermTitle(props.node.attrs.title)
-  if (!key) return null
-  return terms.value[key] ?? null
-})
-
-const termTypeId = computed(() =>
-  normalizeTermType(
-    storedTerm.value?.type || props.node.attrs.termType,
-  ),
-)
-const termTypeText = computed(() => termTypeLabel(termTypeId.value))
-const showTypeBadge = computed(() => termTypeId.value !== 'basic')
-
-const attrsSummary = computed(() =>
-  termAttrsSummary(termTypeId.value, storedTerm.value?.attrs),
 )
 
 function termRootEl() {
@@ -139,16 +114,6 @@ function triggerFlash() {
 }
 
 onMounted(() => {
-  const title = sanitizeTermTitle(props.node.attrs.title)
-  if (title) {
-    const stored = useGlossaryStore().getTerm(title)
-    if (stored) {
-      const nextType = normalizeTermType(stored.type)
-      if (normalizeTermType(props.node.attrs.termType) !== nextType) {
-        props.updateAttributes({ termType: nextType })
-      }
-    }
-  }
   stopFlashRegister = registerTermFlashHandle({
     getTitle: () => String(props.node.attrs.title ?? ''),
     flash: triggerFlash,
@@ -174,7 +139,6 @@ onUnmounted(() => {
     as="div"
     data-type="term-glossary"
     :data-term-title="node.attrs.title"
-    :data-term-type="termTypeId"
     @click="selectWholeTerm"
   >
     <div
@@ -203,18 +167,8 @@ onUnmounted(() => {
     </div>
 
     <div class="ext-term-title-row">
-      <span
-        v-if="showTypeBadge"
-        class="ext-term-type-badge"
-        :title="`类型：${termTypeText}`"
-      >{{ termTypeText }}</span>
       <div class="ext-term-title">{{ titleText }}</div>
     </div>
-    <div
-      v-if="attrsSummary"
-      class="ext-term-attrs-summary"
-      contenteditable="false"
-    >{{ attrsSummary }}</div>
 
     <NodeViewContent
       class="ext-term-desc"

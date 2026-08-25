@@ -66,8 +66,6 @@ export async function offerCreateMissingTerm(
       title,
       description: '',
       sourcePath: '',
-      type: 'basic',
-      attrs: {},
       ignoreContexts: [],
       formerTitles: [],
       pendingManualConfirm: [],
@@ -80,7 +78,7 @@ export async function offerCreateMissingTerm(
       const paragraph = view.state.schema.nodes.paragraph
       if (type && paragraph) {
         const node = type.create(
-          { title, termType: 'basic' },
+          { title },
           paragraph.create(),
         )
         const tr = view.state.tr.insert(view.state.doc.content.size, node)
