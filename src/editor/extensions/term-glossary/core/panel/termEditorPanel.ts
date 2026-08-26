@@ -25,10 +25,12 @@ import {
   serializeTermDescriptionFromNode,
 } from '../model/serializeDesc'
 import { suppressAutoConfirmForTitle } from '../match/match'
+import { replaceRangeWithTermRef } from '../match/convert'
 import { commitTermRename } from '../rename/renameFlow'
 import { TERM_NODE_NAME } from '../shared/constants'
 import { GLOSSARY_DEFAULT_FILE, isGlossaryDefPath, normalizeDocPath } from '../shared/glossaryPaths'
 import {
+  insertTermDefinition,
   repairTermRemarkLeak,
   replaceTermDefinition,
 } from '../model/termOps'
@@ -46,6 +48,11 @@ type CreateSession = {
   insertPos?: number
   /** 新建默认存储位置（词条下当前文件优先） */
   preferredTargetPath?: string
+  /** 新建时预填标题（如选区「设置词条」） */
+  initialTitle?: string
+  /** 确认后把该选区包成 termRef */
+  selectionFrom?: number
+  selectionTo?: number
 }
 
 type EditSession = {
@@ -118,7 +125,9 @@ function present() {
     component: TermEditorFloatHost,
     props: ({ place, zIndex }) => ({
       mode: isCreate ? 'create' : 'edit',
-      initialTitle: isCreate ? '' : s.title,
+      initialTitle: isCreate
+        ? String((s as CreateSession).initialTitle || '')
+        : s.title,
       initialDescription: isCreate ? '' : s.description,
       initialTargetPath:
         isCreate && s.mode === 'create'
@@ -292,26 +301,47 @@ async function handleConfirm(payload: ConfirmPayload) {
       if (!sourcePath || !isGlossaryDefPath(sourcePath) || !sourcePath.endsWith('.md')) {
         sourcePath = GLOSSARY_DEFAULT_FILE
       }
-      await ensureGlossaryEntryFile(sourcePath)
-      let content = ''
-      try {
-        const file = await api.getFileByPath(sourcePath)
-        content = String(file?.content ?? '')
-      } catch {
-        content = ''
+      const editingTarget =
+        !!s.editor &&
+        !s.editor.isDestroyed &&
+        normalizeDocPath(getActiveDocPath()) === sourcePath
+
+      if (editingTarget) {
+        // 当前正在改这个入口文件：只改编辑器再存盘，避免 getFile+reload 把正文盖掉
+        wrapCreateSelectionAsTermRef(s, title)
+        insertTermDefinition(s.editor!, {
+          title,
+          description,
+          at: s.editor!.state.doc.content.size,
+        })
+        await requestSaveCurrentFile()
+        await persistCatalogFields({
+          title,
+          description,
+          sourcePath,
+        })
+      } else {
+        await ensureGlossaryEntryFile(sourcePath)
+        let content = ''
+        try {
+          const file = await api.getFileByPath(sourcePath)
+          content = String(file?.content ?? '')
+        } catch {
+          content = ''
+        }
+        const block = formatTermSource(title, description)
+        const nextMd = content.trimEnd()
+          ? `${content.replace(/\s*$/, '')}\n\n${block}\n`
+          : `${block}\n`
+        await api.saveFileByPath(sourcePath, nextMd)
+        await store.syncFileByPath(sourcePath, nextMd)
+        await persistCatalogFields({
+          title,
+          description,
+          sourcePath,
+        })
+        wrapCreateSelectionAsTermRef(s, title)
       }
-      const block = formatTermSource(title, description)
-      const nextMd = content.trimEnd()
-        ? `${content.replace(/\s*$/, '')}\n\n${block}\n`
-        : `${block}\n`
-      await api.saveFileByPath(sourcePath, nextMd)
-      await store.syncFileByPath(sourcePath, nextMd)
-      await persistCatalogFields({
-        title,
-        description,
-        sourcePath,
-      })
-      requestReloadFilePath(sourcePath)
     } catch (err) {
       console.warn('[term-editor] create to glossary file failed:', err)
       await alertError(err instanceof Error ? err.message : '新建词条失败')
@@ -411,6 +441,28 @@ async function handleConfirm(payload: ConfirmPayload) {
   closeAfterConfirm()
 }
 
+function wrapCreateSelectionAsTermRef(s: CreateSession, title: string) {
+  if (
+    !s.editor ||
+    s.editor.isDestroyed ||
+    typeof s.selectionFrom !== 'number' ||
+    typeof s.selectionTo !== 'number' ||
+    s.selectionTo <= s.selectionFrom
+  ) {
+    return
+  }
+  try {
+    const size = s.editor.state.doc.content.size
+    const from = Math.max(0, Math.min(s.selectionFrom, size))
+    const to = Math.max(from, Math.min(s.selectionTo, size))
+    const tr = s.editor.state.tr
+    if (replaceRangeWithTermRef(tr, s.editor.schema, from, to, title)) {
+      s.editor.view.dispatch(tr)
+    }
+  } catch (err) {
+    console.warn('[term-editor] wrap selection as termRef failed:', err)
+  }
+}
 
 async function ensureGlossaryEntryFile(sourcePath: string) {
   const path = normalizeDocPath(sourcePath)
@@ -462,6 +514,11 @@ export function openTermEditorCreate(opts: {
   besideRect?: CascadeAnchor | null
   /** 显式指定存储位置；否则若当前打开文件在词条下则用当前文件 */
   targetPath?: string
+  /** 预填标题 */
+  initialTitle?: string
+  /** 确认后把该选区包成 termRef */
+  selectionFrom?: number
+  selectionTo?: number
 } = {}) {
   if (opts.editor?.isDestroyed) return
   const editor = opts.editor ?? getActiveTermEditor()
@@ -473,6 +530,9 @@ export function openTermEditorCreate(opts: {
       editor: editor ?? null,
       insertPos: opts.insertPos,
       preferredTargetPath: resolveCreateTargetPath(opts.targetPath),
+      initialTitle: sanitizeTermTitle(opts.initialTitle || '') || undefined,
+      selectionFrom: opts.selectionFrom,
+      selectionTo: opts.selectionTo,
     },
     beside,
   )

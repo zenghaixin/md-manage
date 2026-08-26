@@ -1,19 +1,41 @@
 <script setup>
 /**
  * 右侧「词条」面板：按定义文件名分组，tag 展示标题，支持搜索与跳转。
+ * 胶囊：短按打开来源；长按拖入正文插入 term[]。
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useGlossaryStore } from '../../../../../stores/glossary'
 import {
   isGlossaryDefPath,
   normalizeDocPath,
 } from '../shared/glossaryPaths'
+import {
+  beginTermCapsuleDrag,
+  dropTermRefAtPoint,
+  endTermCapsuleDrag,
+  ensureTermCapsuleDragStyles,
+  isTermCapsuleDragging,
+  moveTermCapsuleGhost,
+} from './termCapsuleDrag'
 
 const store = useGlossaryStore()
 const { terms } = storeToRefs(store)
 
 const query = ref('')
+
+const LONG_PRESS_MS = 220
+const MOVE_TO_DRAG_PX = 6
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let pressTimer = null
+/** @type {{ x: number, y: number, title: string, pointerId: number } | null} */
+let pressState = null
+let suppressClick = false
+/** @type {HTMLElement | null} */
+let captureEl = null
+
+ensureTermCapsuleDragStyles()
 
 /** sourcePath → 分组标题（.md 文件名去后缀） */
 function groupLabelFromPath(sourcePath) {
@@ -66,12 +88,123 @@ const groups = computed(() => {
 
 const totalCount = computed(() => filteredTerms.value.length)
 
+function clearPressTimer() {
+  if (pressTimer != null) {
+    clearTimeout(pressTimer)
+    pressTimer = null
+  }
+}
+
+function unbindDocListeners() {
+  document.removeEventListener('pointermove', onDocPointerMove, true)
+  document.removeEventListener('pointerup', onDocPointerUp, true)
+  document.removeEventListener('pointercancel', onDocPointerCancel, true)
+}
+
+function bindDocListeners() {
+  document.addEventListener('pointermove', onDocPointerMove, true)
+  document.addEventListener('pointerup', onDocPointerUp, true)
+  document.addEventListener('pointercancel', onDocPointerCancel, true)
+}
+
+function startDrag(title, clientX, clientY) {
+  if (isTermCapsuleDragging()) return
+  suppressClick = true
+  beginTermCapsuleDrag(title, clientX, clientY)
+}
+
+function onTagPointerDown(e, term) {
+  if (e.button != null && e.button !== 0) return
+  const title = String(term?.title || '').trim()
+  if (!title) return
+  e.preventDefault()
+  clearPressTimer()
+  pressState = {
+    x: e.clientX,
+    y: e.clientY,
+    title,
+    pointerId: e.pointerId,
+  }
+  captureEl = e.currentTarget
+  try {
+    captureEl?.setPointerCapture?.(e.pointerId)
+  } catch {
+    // ignore
+  }
+  bindDocListeners()
+  pressTimer = setTimeout(() => {
+    pressTimer = null
+    if (!pressState || pressState.title !== title) return
+    startDrag(title, pressState.x, pressState.y)
+  }, LONG_PRESS_MS)
+}
+
+function onDocPointerMove(e) {
+  if (!pressState || e.pointerId !== pressState.pointerId) return
+  if (isTermCapsuleDragging()) {
+    e.preventDefault()
+    moveTermCapsuleGhost(e.clientX, e.clientY)
+    return
+  }
+  const dx = e.clientX - pressState.x
+  const dy = e.clientY - pressState.y
+  // 按下后明显移动：立刻进入拖拽，不要取消长按
+  if (dx * dx + dy * dy > MOVE_TO_DRAG_PX * MOVE_TO_DRAG_PX) {
+    clearPressTimer()
+    startDrag(pressState.title, e.clientX, e.clientY)
+  }
+}
+
+function onDocPointerUp(e) {
+  if (!pressState || e.pointerId !== pressState.pointerId) return
+  clearPressTimer()
+  const wasDragging = isTermCapsuleDragging()
+  if (wasDragging) {
+    e.preventDefault()
+    dropTermRefAtPoint(e.clientX, e.clientY)
+    suppressClick = true
+  }
+  try {
+    captureEl?.releasePointerCapture?.(e.pointerId)
+  } catch {
+    // ignore
+  }
+  captureEl = null
+  pressState = null
+  unbindDocListeners()
+}
+
+function onDocPointerCancel(e) {
+  if (!pressState || e.pointerId !== pressState.pointerId) return
+  clearPressTimer()
+  endTermCapsuleDrag()
+  try {
+    captureEl?.releasePointerCapture?.(e.pointerId)
+  } catch {
+    // ignore
+  }
+  captureEl = null
+  pressState = null
+  unbindDocListeners()
+}
+
 function onOpenTerm(item) {
+  if (suppressClick) {
+    suppressClick = false
+    return
+  }
+  if (isTermCapsuleDragging()) return
   const path = String(item?.sourcePath || '').trim()
   const title = String(item?.title || '').trim()
   if (!path || !title) return
   store.requestOpenSource(path, title)
 }
+
+onBeforeUnmount(() => {
+  clearPressTimer()
+  endTermCapsuleDrag()
+  unbindDocListeners()
+})
 </script>
 
 <template>
@@ -115,7 +248,8 @@ function onOpenTerm(item) {
             :key="`${term.sourcePath}:${term.title}`"
             type="button"
             class="glossary-side-panel__tag"
-            :title="`打开 ${group.label} · ${term.title}`"
+            :title="`短按打开 · 长按拖入正文：${term.title}`"
+            @pointerdown="onTagPointerDown($event, term)"
             @click="onOpenTerm(term)"
           >
             {{ term.title }}
@@ -150,6 +284,11 @@ function onOpenTerm(item) {
   color: var(--muted, #5a6b75);
 }
 
+.glossary-side-panel__hint {
+  line-height: 1.35;
+  opacity: 0.9;
+}
+
 .glossary-side-panel__group-title {
   margin: 0 0 0.5rem;
   font-size: 0.75rem;
@@ -176,7 +315,9 @@ function onOpenTerm(item) {
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.4;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
   transition:
     background 0.12s ease,
     border-color 0.12s ease,
@@ -186,6 +327,10 @@ function onOpenTerm(item) {
 .glossary-side-panel__tag:hover {
   background: color-mix(in srgb, var(--accent, #0d6e6e) 18%, transparent);
   border-color: var(--accent, #0d6e6e);
+}
+
+.glossary-side-panel__tag:active {
+  cursor: grabbing;
 }
 
 .glossary-side-panel__tag:focus-visible {

@@ -39,6 +39,14 @@ function termPosBeforeCursor($from: ResolvedPos, name: string): number | null {
   return $from.before($from.depth) - prev.nodeSize
 }
 
+/** 当前文本块没有实质内容（词条之间的空行） */
+function isEmptyTextblock($from: ResolvedPos): boolean {
+  const parent = $from.parent
+  if (!parent.isTextblock) return false
+  if (parent.content.size === 0) return true
+  return !parent.textContent.replace(/[\u200b\u00a0\s]/g, '')
+}
+
 /**
  * TipTap 词条节点。
  * 落库：`::: term [标题]\\n描述\\n:::`
@@ -226,6 +234,8 @@ export const TermGlossaryNode = Node.create({
 
         const beforePos = termPosBeforeCursor($from, this.name)
         if (beforePos != null) {
+          // 空行先交给默认退格删掉；有正文时才选中上一词条，避免误并进定义块
+          if (isEmptyTextblock($from)) return false
           return editor.commands.setNodeSelection(beforePos)
         }
 
@@ -260,6 +270,7 @@ export const TermGlossaryNode = Node.create({
           if (index + 1 < parent.childCount) {
             const next = parent.child(index + 1)
             if (next.type.name === this.name) {
+              if (isEmptyTextblock($from)) return false
               return editor.commands.setNodeSelection($from.after($from.depth))
             }
           }
