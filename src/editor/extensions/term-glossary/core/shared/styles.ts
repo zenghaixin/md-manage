@@ -11,7 +11,7 @@ export const TERM_GLOSSARY_STYLES = `
   position: relative;
   display: block;
   margin: 0.35em 0 16px;
-  padding: 0.15em 2.5rem 0.15em 0.55em;
+  padding: 0.15em 0.55em;
   border-left: 2px solid color-mix(in srgb, currentColor 28%, transparent);
   cursor: pointer;
 }
@@ -20,6 +20,7 @@ export const TERM_GLOSSARY_STYLES = `
   background: color-mix(in srgb, #3b82f6 12%, transparent);
   border-left-color: #3b82f6;
   border-radius: 4px;
+  padding-right: 4.2rem;
 }
 
 .ext-term-actions {
@@ -55,6 +56,15 @@ export const TERM_GLOSSARY_STYLES = `
 
 .ext-term-action-btn.is-danger:hover {
   color: #dc2626;
+}
+
+.ext-term-action-btn.is-active {
+  color: #2563eb;
+}
+
+html.dark .ext-term-action-btn.is-active,
+[data-theme='dark'] .ext-term-action-btn.is-active {
+  color: #60a5fa;
 }
 
 .ext-term-node.is-flash {

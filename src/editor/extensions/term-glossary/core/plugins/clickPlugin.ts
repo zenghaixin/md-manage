@@ -23,7 +23,108 @@ import { bindTermFlashView } from '../shared/flashTerm'
 import { replaceRangeWithTermRef } from '../match/convert'
 import { offerCreateMissingTerm } from '../dialog/createMissingTerm'
 import type { TermDialogManager } from '../dialog/dialogManager'
+import { setLiveTermDialogManager } from '../dialog/openPreview'
 import type { PromptRuntime } from './prompt'
+
+let liveRuntime: PromptRuntime | null = null
+let liveConvertKey: PluginKey | null = null
+
+function rangeFromEl(view: EditorView, el: HTMLElement): { from: number; to: number } | null {
+  try {
+    const pos = view.posAtDOM(el, 0)
+    const end = view.posAtDOM(el, el.childNodes.length)
+    const from = Math.min(pos, end)
+    const to = Math.max(pos, end)
+    if (!(to > from)) return null
+    return { from, to }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 灰线候选 / 曾用名点击。定义块 NodeView 会吞掉 clickPlugin，需从 Vue 侧再调一次。
+ * @returns 是否已处理（应阻止选中整块词条）
+ */
+export function tryHandleTermDashClick(
+  view: EditorView,
+  event: MouseEvent,
+): boolean {
+  if (!liveRuntime || !liveConvertKey) return false
+  return handleDashClick(view, event, liveRuntime, liveConvertKey)
+}
+
+function handleDashClick(
+  view: EditorView,
+  event: MouseEvent,
+  runtime: PromptRuntime,
+  convertPluginKey: PluginKey,
+): boolean {
+  const target = event.target as HTMLElement | null
+  if (!target) return false
+
+  const formerEl = target.closest?.(
+    `.${TERM_REF_FORMER_CLASS}`,
+  ) as HTMLElement | null
+  if (formerEl) {
+    event.preventDefault()
+    event.stopPropagation()
+    const formerTitle = formerEl.getAttribute('data-term-former') || ''
+    const currentTitles = (formerEl.getAttribute('data-term-current-titles') || '')
+      .split('\u0001')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (!formerTitle || !currentTitles.length) return true
+    const range = rangeFromEl(view, formerEl)
+    if (!range) return true
+    const { from, to } = range
+    runtime.showFormerConfirm(
+      formerEl,
+      formerTitle,
+      currentTitles,
+      (action, title) => {
+        void runtime.handleFormerAction(
+          view,
+          from,
+          to,
+          formerTitle,
+          currentTitles,
+          action,
+          title,
+        )
+      },
+    )
+    return true
+  }
+
+  const candidate = target.closest?.(
+    `.${TERM_REF_CANDIDATE_CLASS}`,
+  ) as HTMLElement | null
+  if (candidate) {
+    event.preventDefault()
+    event.stopPropagation()
+    const matchTitle = candidate.getAttribute('data-term-title') || ''
+    const raw = candidate.getAttribute('data-term-candidates') || matchTitle
+    const candidates = raw
+      .split('\u0001')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const range = rangeFromEl(view, candidate)
+    if (!range) return true
+    const { from, to } = range
+    runtime.showCandidateConfirm(candidate, candidates, (title) => {
+      const tr = view.state.tr
+      if (!replaceRangeWithTermRef(tr, view.state.schema, from, to, title)) {
+        return
+      }
+      tr.setMeta(convertPluginKey, { skip: true })
+      view.dispatch(tr)
+    })
+    return true
+  }
+
+  return false
+}
 
 export function createClickPlugin(opts: {
   manager: TermDialogManager
@@ -41,6 +142,9 @@ export function createClickPlugin(opts: {
     runtime,
     buildDecorations,
   } = opts
+
+  liveRuntime = runtime
+  liveConvertKey = convertPluginKey
 
   return new Plugin({
     key: pluginKey,
@@ -85,78 +189,7 @@ export function createClickPlugin(opts: {
           if (target?.closest?.(`.${TERM_POPOVER_CLASS}`)) return false
           if (target?.closest?.(`.${KEY_PICKER_CLASS}`)) return false
 
-          const formerEl = target?.closest?.(
-            `.${TERM_REF_FORMER_CLASS}`,
-          ) as HTMLElement | null
-          if (formerEl) {
-            event.preventDefault()
-            event.stopPropagation()
-            const formerTitle =
-              formerEl.getAttribute('data-term-former') || ''
-            const currentTitles = (
-              formerEl.getAttribute('data-term-current-titles') || ''
-            )
-              .split('\u0001')
-              .map((s) => s.trim())
-              .filter(Boolean)
-            if (!formerTitle || !currentTitles.length) return true
-            const pos = view.posAtDOM(formerEl, 0)
-            const end = view.posAtDOM(formerEl, formerEl.childNodes.length)
-            const from = Math.min(pos, end)
-            const to = Math.max(pos, end)
-            runtime.showFormerConfirm(
-              formerEl,
-              formerTitle,
-              currentTitles,
-              (action, title) => {
-                void runtime.handleFormerAction(
-                  view,
-                  from,
-                  to,
-                  formerTitle,
-                  currentTitles,
-                  action,
-                  title,
-                )
-              },
-            )
-            return true
-          }
-
-          const candidate = target?.closest?.(
-            `.${TERM_REF_CANDIDATE_CLASS}`,
-          ) as HTMLElement | null
-          if (candidate) {
-            event.preventDefault()
-            event.stopPropagation()
-            const matchTitle =
-              candidate.getAttribute('data-term-title') || ''
-            const raw =
-              candidate.getAttribute('data-term-candidates') || matchTitle
-            const candidates = raw
-              .split('\u0001')
-              .map((s) => s.trim())
-              .filter(Boolean)
-            const pos = view.posAtDOM(candidate, 0)
-            const end = view.posAtDOM(candidate, candidate.childNodes.length)
-            const from = Math.min(pos, end)
-            const to = Math.max(pos, end)
-            runtime.showCandidateConfirm(candidate, candidates, (title) => {
-              const tr = view.state.tr
-              if (
-                !replaceRangeWithTermRef(
-                  tr,
-                  view.state.schema,
-                  from,
-                  to,
-                  title,
-                )
-              ) {
-                return
-              }
-              tr.setMeta(convertPluginKey, { skip: true })
-              view.dispatch(tr)
-            })
+          if (handleDashClick(view, event, runtime, convertPluginKey)) {
             return true
           }
 
@@ -253,6 +286,9 @@ export function createClickPlugin(opts: {
           document.removeEventListener('mousedown', onDocClick)
           unsubscribe?.()
           bindTermFlashView(null)
+          setLiveTermDialogManager(null)
+          liveRuntime = null
+          liveConvertKey = null
           manager.destroy()
           picker.destroy()
         },

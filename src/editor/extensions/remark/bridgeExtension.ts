@@ -25,6 +25,7 @@ import {
   getNodeBlockRemarkId,
 } from './blockTargets'
 import { REMARK_NODE_NAME } from './constants'
+import { TERM_NODE_NAME } from '../term-glossary/core/shared/constants'
 import { isRemarkBoundaryExited } from './node'
 import { ensureRemarkStyles } from './styles'
 
@@ -40,7 +41,9 @@ function bindSelectionAction() {
     order: 20,
     isVisible: (ctx) => {
       const block = findBlockRemarkTargetAt(ctx.view.state.doc, ctx.from, ctx.to)
-      // 已整块备注过的模块（如词条）：再选中不显示「备注」
+      // 词条定义块：备注入口在右上角，不走选区气泡
+      if (block?.node.type.name === TERM_NODE_NAME) return false
+      // 已整块备注过的模块：再选中不显示「备注」
       if (block) return !getNodeBlockRemarkId(block.node)
       return !!ctx.text.trim()
     },
@@ -176,8 +179,15 @@ export const RemarkBridgeExtension = Extension.create({
 
             window.setTimeout(() => {
               if (editorView.isDestroyed) return
-              let id = ''
               const { selection } = editorView.state
+              // 词条定义块：点选只高亮，备注走右上角按钮
+              if (
+                selection instanceof NodeSelection &&
+                selection.node.type.name === TERM_NODE_NAME
+              ) {
+                return
+              }
+              let id = ''
               if (selection instanceof NodeSelection) {
                 id = getNodeBlockRemarkId(selection.node)
               }

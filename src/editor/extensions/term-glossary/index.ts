@@ -8,6 +8,7 @@ import { TERM_GLOSSARY_ID } from './core/shared/constants'
 import { TermGlossaryInteraction } from './core/plugins/interaction'
 import { TermGlossaryNode } from './core/model/node'
 import { TermRefNode } from './core/model/termRef'
+import { TermRefPreviewClick } from './core/plugins/termRefPreviewClick'
 import {
   parseTermMarkdown,
   peelRemarkBraceFromDescription,
@@ -153,7 +154,7 @@ const termGlossaryExtension: MarkdownExtension = {
     TermRefNode,
     TermGlossaryInteraction,
   ],
-  getMarkdownFieldLiteExtensions: () => [TermRefNode],
+  getMarkdownFieldLiteExtensions: () => [TermRefNode, TermRefPreviewClick],
   getGlobalMatchRule,
 
   /**

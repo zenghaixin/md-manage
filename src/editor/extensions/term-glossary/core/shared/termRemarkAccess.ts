@@ -1,6 +1,6 @@
 /**
  * 预览 / 编辑浮层访问词条整块备注。
- * 定义块本身仍靠选中词条 + 气泡「备注」；此处只负责读 id / 必要时补挂 attrs。
+ * 定义块入口在右上角「备注」；此处只负责读 id / 必要时补挂 attrs。
  */
 import type { EditorView } from '@tiptap/pm/view'
 import { applyRemarkToSelection } from '../../../remark/apply'

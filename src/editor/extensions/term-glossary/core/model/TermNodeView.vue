@@ -1,12 +1,23 @@
 ﻿<script setup>
 /**
- * 词条定义块：只读展示；选中后右上角编辑 / 删除。
+ * 词条定义块：只读展示；选中后右上角备注 / 编辑 / 删除。
+ * 描述里的词条引用可点开预览弹窗。
  */
 import { computed, onMounted, onUnmounted } from 'vue'
 import { NodeSelection } from '@tiptap/pm/state'
 import { NodeViewContent, NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
 import AppIcon from '../../../../../components/AppIcon.vue'
+import { applyRemarkToSelection } from '../../../remark/apply'
+import { openRemarkById } from '../../../remark/bridge'
+import {
+  TERM_REF_CANDIDATE_CLASS,
+  TERM_REF_CLASS,
+  TERM_REF_INVALID_CLASS,
+} from '../shared/constants'
 import { FLASH_MS, registerTermFlashHandle } from '../shared/flashTerm'
+import { offerCreateMissingTerm } from '../dialog/createMissingTerm'
+import { openTermPreview } from '../dialog/openPreview'
+import { tryHandleTermDashClick } from '../plugins/clickPlugin'
 import { openTermEditorEdit } from '../panel/termEditorPanel'
 import { confirmDeleteTermDefinition } from './termOps'
 import { sanitizeTermTitle } from './syntax'
@@ -23,6 +34,10 @@ const titleText = computed(
     '（未命名）',
 )
 
+const hasRemark = computed(
+  () => !!String(props.node.attrs.remarkId ?? '').trim(),
+)
+
 function termRootEl() {
   const pos = props.getPos()
   if (typeof pos !== 'number') return null
@@ -31,6 +46,29 @@ function termRootEl() {
 
 function selectWholeTerm(event) {
   if (event.target?.closest?.('.ext-term-actions')) return
+  // 描述里的灰线候选 / 曾用名：弹出确认，不选中整块
+  if (tryHandleTermDashClick(props.editor.view, event)) return
+  const ref = event.target?.closest?.(`.${TERM_REF_CLASS}`)
+  if (ref && !ref.classList.contains(TERM_REF_CANDIDATE_CLASS)) {
+    event.preventDefault()
+    event.stopPropagation()
+    const nested = (
+      ref.getAttribute('data-term-title') ||
+      ref.querySelector('.ext-term-ref-text')?.textContent ||
+      ref.textContent ||
+      ''
+    ).trim()
+    if (!nested) return
+    if (
+      ref.classList.contains(TERM_REF_INVALID_CLASS) ||
+      ref.classList.contains('ext-term-ref-invalid')
+    ) {
+      void offerCreateMissingTerm(nested, props.editor.view)
+      return
+    }
+    openTermPreview(nested, ref)
+    return
+  }
   const pos = props.getPos()
   if (typeof pos !== 'number') return
   event.preventDefault()
@@ -61,6 +99,27 @@ function onDelete(event) {
   const pos = props.getPos()
   if (typeof pos !== 'number') return
   void confirmDeleteTermDefinition(props.editor, pos)
+}
+
+function onRemark(event) {
+  event.preventDefault()
+  event.stopPropagation()
+  const pos = props.getPos()
+  if (typeof pos !== 'number') return
+  const view = props.editor.view
+  const node = view.state.doc.nodeAt(pos)
+  if (!node) return
+  let remarkId = String(node.attrs.remarkId || '').trim()
+  if (!remarkId) {
+    remarkId = String(
+      applyRemarkToSelection(view, {
+        from: pos,
+        to: pos + node.nodeSize,
+      }) || '',
+    ).trim()
+  }
+  if (!remarkId) return
+  openRemarkById(remarkId, { ui: 'panel', label: titleText.value })
 }
 
 function resolveFlashEl() {
@@ -146,6 +205,16 @@ onUnmounted(() => {
       class="ext-term-actions"
       contenteditable="false"
     >
+      <button
+        type="button"
+        class="ext-term-action-btn"
+        :class="{ 'is-active': hasRemark }"
+        title="备注"
+        aria-label="备注"
+        @click="onRemark"
+      >
+        <AppIcon name="remark" :size="14" />
+      </button>
       <button
         type="button"
         class="ext-term-action-btn"

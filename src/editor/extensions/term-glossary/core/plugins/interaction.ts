@@ -4,6 +4,7 @@ import { ensureTermGlossaryStyles } from '../shared/styles'
 import { getKeyPicker } from '../../../../../components/key-picker'
 import { buildDecorations } from '../match/highlight'
 import { TermDialogManager } from '../dialog/dialogManager'
+import { setLiveTermDialogManager } from '../dialog/openPreview'
 import { createPromptRuntime } from './prompt'
 import { createAutoConfirmPlugin } from './autoConfirmPlugin'
 import { createClickPlugin } from './clickPlugin'
@@ -22,11 +23,13 @@ export const TermGlossaryInteraction = Extension.create({
   },
 
   onDestroy() {
+    setLiveTermDialogManager(null)
     setActiveTermEditor(null)
   },
 
   addProseMirrorPlugins() {
     const manager = new TermDialogManager()
+    setLiveTermDialogManager(manager)
     const picker = getKeyPicker()
     const runtime = createPromptRuntime({
       picker,
