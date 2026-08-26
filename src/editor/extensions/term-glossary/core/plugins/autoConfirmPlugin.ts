@@ -20,6 +20,7 @@ import {
   findConfirmHitOnMatchBreak,
   findConfirmHitOnMaximalMatch,
   findConfirmHitOnExtendableIdle,
+  findUniquePrefixGhost,
 } from '../match/match'
 import { setActiveTermEditorView } from '../shared/editorViewRef'
 import type { KeyPicker } from '../../../../../components/key-picker'
@@ -104,13 +105,6 @@ export function createAutoConfirmPlugin(opts: {
           })
         }
 
-        // 弹出即失焦，避免用户继续打字冲掉确认
-        try {
-          view.dom.blur()
-        } catch {
-          // ignore
-        }
-
         if (found.kind === 'former') {
           const { hit } = found
           const key = `former:${hit.from}:${hit.to}:${hit.formerTitle}`
@@ -177,12 +171,41 @@ export function createAutoConfirmPlugin(opts: {
         )
       }
 
+      const promptKeyFor = (
+        found:
+          | { kind: 'former'; hit: import('../match/match').FormerHitMatch }
+          | { kind: 'candidate'; hit: import('../match/match').CandidateMatch },
+      ) =>
+        found.kind === 'former'
+          ? `former:${found.hit.from}:${found.hit.to}:${found.hit.formerTitle}`
+          : `cand:${found.hit.from}:${found.hit.to}:${found.hit.matchTitle}`
+
+      const resolveOpenPrompt = (view: EditorView) =>
+        findConfirmHitOnMaximalMatch(view.state.doc, view.state.selection.from) ||
+        findConfirmHitOnMatchBreak(view.state.doc, view.state.selection.from) ||
+        findConfirmHitOnExtendableIdle(
+          view.state.doc,
+          view.state.selection.from,
+        )
+
+      const syncOpenPicker = (view: EditorView, docChanged = false) => {
+        if (!picker.isOpen) return
+        if (docChanged) picker.disarmKeyboard()
+        const found = resolveOpenPrompt(view)
+        const key = found ? promptKeyFor(found) : ''
+        if (!found || key !== picker.currentKey) {
+          picker.hide()
+          return
+        }
+        const anchor = coordsForRange(view, found.hit.from, found.hit.to)
+        if (anchor) picker.updateAnchor(anchor)
+      }
+
       /** 最长且不可延长 → 立刻弹（曾用名 / 抑制自动确认） */
       const tryMaximalPrompt = (view: EditorView): boolean => {
         if (view.isDestroyed) return false
         if (document.activeElement?.closest?.('.ext-term-title')) return false
         if (!view.state.selection.empty) return false
-        if (picker.isOpen) return false
         const found = findConfirmHitOnMaximalMatch(
           view.state.doc,
           view.state.selection.from,
@@ -196,7 +219,6 @@ export function createAutoConfirmPlugin(opts: {
         if (view.isDestroyed) return false
         if (document.activeElement?.closest?.('.ext-term-title')) return false
         if (!view.state.selection.empty) return false
-        if (picker.isOpen) return false
         const found = findConfirmHitOnMatchBreak(
           view.state.doc,
           view.state.selection.from,
@@ -206,12 +228,16 @@ export function createAutoConfirmPlugin(opts: {
         return true
       }
 
-      /** 还可延长（如 暴击→暴击率）→ 停顿后弹相关 */
+      /** 还可延长（如 暴击→暴击率）→ 停顿后弹相关；唯一匹配由幽灵补全 */
       const tryExtendablePrompt = (view: EditorView): boolean => {
         if (view.isDestroyed) return false
         if (document.activeElement?.closest?.('.ext-term-title')) return false
         if (!view.state.selection.empty) return false
-        if (picker.isOpen) return false
+        if (
+          findUniquePrefixGhost(view.state.doc, view.state.selection.from)
+        ) {
+          return false
+        }
         const found = findConfirmHitOnExtendableIdle(
           view.state.doc,
           view.state.selection.from,
@@ -227,7 +253,6 @@ export function createAutoConfirmPlugin(opts: {
           return
         }
         if (document.activeElement?.closest?.('.ext-term-title')) return
-        if (picker.isOpen) return
 
         // 先静默确认已完整且不可延长的正式标题
         const tr = editorView.state.tr
@@ -260,6 +285,12 @@ export function createAutoConfirmPlugin(opts: {
           })
         }
 
+        if (picker.isOpen) {
+          syncOpenPicker(editorView)
+          // 同步后仍开着 → 匹配未变；已关闭 → 继续尝试新命中（如「暴击」多候选）
+          if (picker.isOpen) return
+        }
+
         tryMaximalPrompt(editorView) ||
           tryBreakPrompt(editorView) ||
           tryExtendablePrompt(editorView)
@@ -288,19 +319,28 @@ export function createAutoConfirmPlugin(opts: {
       return {
         update(view, prevState) {
           if (composing) return
-          // 弹窗期间不处理输入驱动的更新（编辑器已失焦）
-          if (picker.isOpen) return
 
           if (view.state.doc.eq(prevState.doc)) return
 
+          if (picker.isOpen) {
+            syncOpenPicker(view, true)
+          }
+
           if (skipSchedule) {
             skipSchedule = false
-            tryMaximalPrompt(view) || tryBreakPrompt(view)
+            if (!picker.isOpen) {
+              tryMaximalPrompt(view) || tryBreakPrompt(view)
+            }
             return
           }
           if (convertPluginKey.getState(view.state)?.skipAfterUnconfirm) {
             if (timer) clearTimeout(timer)
             timer = null
+            return
+          }
+
+          if (picker.isOpen) {
+            scheduleIdle()
             return
           }
 
@@ -329,21 +369,6 @@ export function createAutoConfirmPlugin(opts: {
        * 先把光标挪到 atom 后方再插入字符。
        */
       handleKeyDown(view, event) {
-        // 确认弹窗打开时禁止继续往正文打字（选词数字 / 固定操作键由弹窗 capture 处理）
-        if (picker.isOpen) {
-          if (event.key >= '1' && event.key <= '9') return true
-          if (
-            event.key === '0' ||
-            event.key === '-' ||
-            event.key === '_' ||
-            event.key === 'Escape'
-          ) {
-            return true
-          }
-          event.preventDefault()
-          return true
-        }
-
         const { selection } = view.state
         if (!(selection instanceof NodeSelection)) return false
         if (selection.node.type.name !== TERM_REF_NODE_NAME) return false

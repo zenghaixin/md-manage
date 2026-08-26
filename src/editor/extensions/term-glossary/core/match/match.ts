@@ -409,6 +409,131 @@ function isPrefixOfAnyMatchKey(text: string, keys: GlossaryMatchKey[]): boolean 
   return keys.some((k) => k.text.startsWith(text))
 }
 
+/** 比 prefix 更长的正式标题（不含 prefix 自身） */
+function longerTitlesWithPrefix(prefix: string, titles: string[]): string[] {
+  const p = String(prefix ?? '').trim()
+  if (!p) return []
+  const host = getHostTermTitle()
+  return titles
+    .filter((t) => t.startsWith(p) && t.length > p.length && t !== host)
+    .sort((a, b) => b.length - a.length || a.localeCompare(b, 'zh'))
+}
+
+/**
+ * 无完整词条键、但为更长词条的前缀（如输入「暴击」对应 暴击率 / 暴击伤害）。
+ */
+function hitFromAmbiguousPrefix(
+  blockStart: number,
+  matchEnd: number,
+  prefix: string,
+  titles: string[],
+): { kind: 'candidate'; hit: CandidateMatch } | null {
+  const candidates = longerTitlesWithPrefix(prefix, titles)
+  if (!candidates.length) return null
+  const matchStart = matchEnd - prefix.length
+  if (matchStart < blockStart || matchEnd <= matchStart) return null
+  return {
+    kind: 'candidate',
+    hit: {
+      from: matchStart,
+      to: matchEnd,
+      matchTitle: prefix,
+      candidates,
+      kind: 'fallback',
+    },
+  }
+}
+
+/** 扫描用：收集有更长标题匹配、且本身不是词条标题的前缀串 */
+function collectAmbiguousPrefixStrings(titles: string[]): string[] {
+  const storeTitles = [
+    ...new Set(titles.map(sanitizeTermTitle).filter(Boolean)),
+  ]
+  const titleSet = new Set(storeTitles)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const t of storeTitles) {
+    for (let len = 2; len < t.length; len++) {
+      const p = t.slice(0, len)
+      if (titleSet.has(p) || seen.has(p)) continue
+      if (longerTitlesWithPrefix(p, storeTitles).length >= 1) {
+        seen.add(p)
+        out.push(p)
+      }
+    }
+  }
+  return out.sort((a, b) => b.length - a.length || a.localeCompare(b, 'zh'))
+}
+
+function findPrefixAmbiguousFallbackHits(
+  text: string,
+  titles: string[],
+  excludeRanges: Array<{ from: number; to: number }>,
+): Array<{ from: number; to: number; title: string }> {
+  if (!text || !titles.length) return []
+  const prefixes = collectAmbiguousPrefixStrings(titles)
+  if (!prefixes.length) return []
+  const taken = [...excludeRanges]
+  const hits: Array<{ from: number; to: number; title: string }> = []
+  const overlaps = (from: number, to: number) =>
+    taken.some((r) => from < r.to && to > r.from)
+
+  for (const prefix of prefixes) {
+    let from = 0
+    while (from <= text.length) {
+      const idx = text.indexOf(prefix, from)
+      if (idx < 0) break
+      const to = idx + prefix.length
+      from = idx + 1
+      if (overlaps(idx, to)) continue
+      taken.push({ from: idx, to })
+      hits.push({ from: idx, to, title: prefix })
+    }
+  }
+  return hits.sort((a, b) => a.from - b.from)
+}
+
+export interface TermGhostCompletion {
+  from: number
+  to: number
+  /** 将写入的完整词条标题 */
+  title: string
+  /** 用户已输入的前缀 */
+  typed: string
+  /** 光标后展示的幽灵后缀（title 去掉 typed 后的部分） */
+  suffix: string
+}
+
+/**
+ * 唯一前缀补全：光标前最长后缀仅对应一条更长词条时返回幽灵文本。
+ * 多候选时不返回（交给气泡）；输入与目标标题不一致时自然为 null。
+ */
+export function findUniquePrefixGhost(
+  doc: ProseMirrorNode,
+  cursor: number,
+): TermGhostCompletion | null {
+  const ctx = textBeforeCursorInBlock(doc, cursor)
+  if (!ctx || ctx.text.length < 2) return null
+
+  const titles = Array.from(collectStoreTitles())
+  if (!titles.length) return null
+
+  for (let len = ctx.text.length; len >= 2; len--) {
+    const typed = ctx.text.slice(-len)
+    const longer = longerTitlesWithPrefix(typed, titles)
+    if (longer.length === 1) {
+      const title = longer[0]
+      const suffix = title.slice(typed.length)
+      if (!suffix) return null
+      const from = cursor - len
+      if (from < ctx.blockStart) return null
+      return { from, to: cursor, title, typed, suffix }
+    }
+    if (longer.length > 1) return null
+  }
+  return null
+}
+
 function hitFromKey(
   blockStart: number,
   matchEnd: number,
@@ -619,7 +744,8 @@ export function findConfirmHitOnMaximalMatch(
 }
 
 /**
- * 延迟：已完整命中但仍可延长（暴击 → 暴击率 / 暴击概率）时，停顿后弹相关确认。
+ * 延迟：已完整命中但仍可延长（暴击 → 暴击率 / 暴击概率）时，停顿后弹相关确认；
+ * 或尚无短词条、但输入串为更长词条的前缀时也弹窗选词。
  */
 export function findConfirmHitOnExtendableIdle(
   doc: ProseMirrorNode,
@@ -634,33 +760,56 @@ export function findConfirmHitOnExtendableIdle(
   const keys = collectGlossaryMatchKeys()
   if (!keys.length) return null
 
+  const storeTitles = Array.from(collectStoreTitles())
   const exact = longestExactSuffix(ctx.text, keys)
-  if (!exact) return null
-  if (!canKeyExtend(exact, keys)) return null
 
-  const result = hitFromKey(
-    ctx.blockStart,
-    cursor,
-    exact,
-    Array.from(collectStoreTitles()),
-  )
-  if (!result) return null
+  if (exact && canKeyExtend(exact, keys)) {
+    const result = hitFromKey(ctx.blockStart, cursor, exact, storeTitles)
+    if (!result) return null
 
-  if (result.kind === 'former') {
-    if (
-      isFormerIgnored(
-        ctx.text,
-        result.hit.from - ctx.blockStart,
-        result.hit.to - ctx.blockStart,
-        result.hit.currentTitles,
-      )
-    ) {
-      return null
+    if (result.kind === 'former') {
+      if (
+        isFormerIgnored(
+          ctx.text,
+          result.hit.from - ctx.blockStart,
+          result.hit.to - ctx.blockStart,
+          result.hit.currentTitles,
+        )
+      ) {
+        return null
+      }
+      return result
     }
-    return result
+
+    return finalizePromptResult(doc, result, 'delayed')
   }
 
-  return finalizePromptResult(doc, result, 'delayed')
+  // 无短词条时：扫光标前最长后缀（勿要求整段文本都是前缀，否则「造成暴击」不弹）
+  // 多候选 → 气泡；唯一 → 交给幽灵，此处不弹
+  if (ctx.text.length >= 2 && !exact) {
+    for (let len = ctx.text.length; len >= 2; len--) {
+      const prefix = ctx.text.slice(-len)
+      const candidates = longerTitlesWithPrefix(prefix, storeTitles)
+      if (candidates.length >= 2) {
+        const prefixResult = hitFromAmbiguousPrefix(
+          ctx.blockStart,
+          cursor,
+          prefix,
+          storeTitles,
+        )
+        if (prefixResult) {
+          return finalizePromptResult(doc, prefixResult, 'delayed')
+        }
+        return null
+      }
+      if (candidates.length === 1) {
+        // 唯一更长匹配走幽灵，不要继续缩成更短多候选前缀
+        return null
+      }
+    }
+  }
+
+  return null
 }
 
 /**
@@ -809,7 +958,30 @@ export function scanTermMatches(doc: ProseMirrorNode): TextScanResult {
       })
     }
 
-    // 3) 子串灰线兜底
+    // 3) 公共前缀灰线（如「暴击」对应 暴击率/暴击伤害，且词库无短词条「暴击」）
+    const prefixFb = findPrefixAmbiguousFallbackHits(text, titles, localTaken)
+    for (const hit of prefixFb) {
+      if (selfTerm && selfTerm.title === hit.title) continue
+      if (hostTitle && hostTitle === hit.title) continue
+      const from = textFrom + hit.from
+      const to = textFrom + hit.to
+      if (overlaps(from, to, taken) || overlaps(from, to, refRanges)) continue
+      taken.push({ from, to })
+      localTaken.push({ from: hit.from, to: hit.to })
+      const candidates = longerTitlesWithPrefix(hit.title, titles).filter(
+        (t) => t !== hostTitle,
+      )
+      if (!candidates.length) continue
+      fallback.push({
+        from,
+        to,
+        matchTitle: hit.title,
+        candidates,
+        kind: 'fallback',
+      })
+    }
+
+    // 4) 子串灰线兜底
     const fb = findSubstringFallbackHits(text, titles, localTaken)
     for (const hit of fb) {
       if (selfTerm && selfTerm.title === hit.title) continue

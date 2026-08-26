@@ -54,24 +54,48 @@ function clampLeft(left: number, width: number): number {
   return Math.min(maxX, Math.max(PAD, Math.round(left)))
 }
 
-function clampTop(top: number): number {
-  const maxY = Math.max(PAD, window.innerHeight - PAD - 40)
+function clampTop(top: number, height = 0): number {
+  const h = Math.max(0, Math.round(height))
+  const maxY = Math.max(PAD, window.innerHeight - PAD - (h || 40))
   return Math.min(maxY, Math.max(PAD, Math.round(top)))
 }
 
-/** 右侧平行：top 与来源一致，不加任何下移 */
+/** 保证 top + height 完整落在视口内；空间不足时上移，必要时改到光标上方 */
+function fitTopInViewport(
+  top: number,
+  height: number,
+  source?: CascadeAnchor | null,
+): number {
+  const h = Math.max(1, Math.round(height))
+  let y = Math.round(top)
+  const maxY = Math.max(PAD, window.innerHeight - PAD - h)
+  if (y <= maxY) return clampTop(y, h)
+  // 优先整体上移，完整展示浮层（不严格跟随光标 top）
+  y = maxY
+  if (source) {
+    const above = Math.round(source.top - h - CASCADE_GAP)
+    if (above >= PAD && above < y) y = above
+  }
+  return clampTop(y, h)
+}
+
+/** 右侧平行：top 与来源一致；若会溢出视口则上移以保证完整展示 */
 export function placeParallel(
   source: CascadeAnchor,
   width: number,
-  _height?: number,
+  height = 0,
 ): { left: number; top: number } {
   let left = source.right + CASCADE_GAP
   if (left + width > window.innerWidth - PAD) {
     left = source.left - width - CASCADE_GAP
   }
+  const h = Math.max(0, Math.round(height))
+  const top = h > 0
+    ? fitTopInViewport(source.top, h, source)
+    : clampTop(source.top, h)
   return {
     left: clampLeft(left, width),
-    top: clampTop(source.top),
+    top,
   }
 }
 
@@ -80,11 +104,14 @@ function placeDownRightFrom(
   first: { left: number; top: number },
   width: number,
   n: number,
+  height = 0,
 ): { left: number; top: number } {
   const step = Math.max(1, n)
+  const h = Math.max(0, Math.round(height))
+  const rawTop = first.top + step * CASCADE_DOWN
   return {
     left: clampLeft(first.left + step * CASCADE_DOWN, width),
-    top: clampTop(first.top + step * CASCADE_DOWN),
+    top: h > 0 ? fitTopInViewport(rawTop, h) : clampTop(rawTop, h),
   }
 }
 
@@ -117,6 +144,7 @@ export function allocateCascadePlace(opts: {
   anchorRect?: CascadeAnchor | null
 }): { left: number; top: number } {
   const width = Math.max(1, Math.round(opts.width))
+  const height = Math.max(1, Math.round(opts.height))
   const source =
     asAnchor(opts.besideRect) || asAnchor(opts.anchorRect)
 
@@ -125,18 +153,16 @@ export function allocateCascadePlace(opts: {
   let place: { left: number; top: number }
 
   if (!leader) {
-    // 首次（或原首扇已拖走）：来源右侧平行
     cascadeSeq = 0
     if (source) {
-      place = placeParallel(source, width)
+      place = placeParallel(source, width, height)
     } else {
       place = {
         left: clampLeft(window.innerWidth - width - 24, width),
-        top: clampTop(Math.round(window.innerHeight / 4)),
+        top: fitTopInViewport(Math.round(window.innerHeight / 4), height),
       }
     }
   } else {
-    // 后续：相对首扇右下
     cascadeSeq += 1
     const firstRect = asAnchor(leader.getRect()) || {
       left: leader.originLeft,
@@ -144,7 +170,7 @@ export function allocateCascadePlace(opts: {
       right: leader.originLeft,
       bottom: leader.originTop,
     }
-    place = placeDownRightFrom(firstRect, width, cascadeSeq)
+    place = placeDownRightFrom(firstRect, width, cascadeSeq, height)
   }
 
   lastAllocated = { ...place }

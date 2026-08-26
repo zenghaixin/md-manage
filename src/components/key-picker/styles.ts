@@ -60,6 +60,20 @@ export const KEY_PICKER_STYLES = `
   color: #2563eb;
 }
 
+.${KEY_PICKER_CLASS}-item.is-active {
+  background: color-mix(in srgb, #2563eb 16%, transparent);
+  color: #2563eb;
+}
+
+.${KEY_PICKER_CLASS}--passive {
+  pointer-events: none;
+}
+
+.${KEY_PICKER_CLASS}--passive .${KEY_PICKER_CLASS}-item,
+.${KEY_PICKER_CLASS}--passive .${KEY_PICKER_CLASS}-foot .${KEY_PICKER_CLASS}-item {
+  pointer-events: auto;
+}
+
 .${KEY_PICKER_CLASS}-hotkey {
   flex: 0 0 auto;
   min-width: 0;
@@ -78,13 +92,24 @@ export const KEY_PICKER_STYLES = `
 .${KEY_PICKER_CLASS}-foot {
   display: flex;
   flex-direction: row;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
   gap: 0.15rem;
   margin-top: 0.3rem;
   padding-top: 0.3rem;
   border-top: 1px solid color-mix(in srgb, var(--border, #c5d0d8) 80%, transparent);
+}
+
+.${KEY_PICKER_CLASS}-hint {
+  flex: 1 1 100%;
+  padding: 0.05rem 0.3rem 0.15rem;
+  color: var(--muted, #5a6b75);
+  font-size: 0.6875rem;
+}
+
+.${KEY_PICKER_CLASS}--armed .${KEY_PICKER_CLASS}-hint {
+  display: none;
 }
 
 .${KEY_PICKER_CLASS}-foot .${KEY_PICKER_CLASS}-item {

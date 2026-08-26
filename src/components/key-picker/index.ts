@@ -10,6 +10,7 @@ export type {
   KeyPickerSecondary,
   KeyPickerItem,
   KeyPickerShowOptions,
+  KeyPickerSelectMode,
 } from './KeyPicker'
 
 import { KeyPicker } from './KeyPicker'

@@ -825,6 +825,20 @@ html.dark .ext-term-popover.is-flash,
   background: transparent;
   color: var(--ink, #1a2830);
 }
+
+/* 跟打唯一匹配：光标后灰色幽灵后缀（非正文，Tab 补全） */
+.ext-term-ghost-suffix {
+  color: color-mix(in srgb, var(--muted, #64748b) 88%, transparent);
+  opacity: 0.85;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre;
+}
+
+html.dark .ext-term-ghost-suffix,
+[data-theme='dark'] .ext-term-ghost-suffix {
+  color: color-mix(in srgb, var(--muted, #94a3b8) 90%, transparent);
+}
 `
 
 /** 注入 / 更新扩展样式（同 id 会覆盖） */

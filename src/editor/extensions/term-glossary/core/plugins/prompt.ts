@@ -75,12 +75,13 @@ export function createPromptRuntime(opts: {
   ) => {
     picker.show({
       anchor,
-      label: '确认是否为词条',
       titles,
       onPick,
       promptKey,
       onDismiss,
       sourceId: TERM_GLOSSARY_ID,
+      selectMode: 'tab',
+      passive: true,
     })
   }
 

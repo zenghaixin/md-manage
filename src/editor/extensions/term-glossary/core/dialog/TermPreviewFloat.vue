@@ -168,9 +168,10 @@ function onDescClick(e) {
       .filter(Boolean)
     getKeyPicker().show({
       anchor: candidate,
-      label: '确认是否为词条',
       titles: candidates,
       sourceId: PREVIEW_PICKER_SOURCE,
+      selectMode: 'tab',
+      passive: true,
       onPick: (picked) => {
         void confirmCandidate(matchTitle.trim(), picked)
       },

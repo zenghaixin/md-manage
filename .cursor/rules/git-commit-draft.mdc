@@ -7,6 +7,8 @@ alwaysApply: true
 
 在本仓库完成一轮**有代码/配置改动**的任务后（即将回复用户前），必须生成可直接复制的提交说明文件。
 
+若本轮还有**用户可见能力变化**，须同时按 `.cursor/rules/changelog-update.mdc` 更新 `CHANGELOG.md`（先 CHANGELOG，再写本草稿；建议提交说明可带「更新 CHANGELOG」）。
+
 ## 何时执行
 
 - 本轮有**较完整**的功能 / 重构 / 多文件改动，且任务已收尾 → **写入**

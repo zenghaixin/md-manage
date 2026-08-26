@@ -83,23 +83,21 @@ function hasExplicitCoord(v) {
 
 function placeInitial() {
   const w = sizeW.value
+  const h =
+    sizeH.value ??
+    (typeof props.height === 'number' ? props.height : props.minHeight)
   const hasLeft = hasExplicitCoord(props.left)
   const hasTop = hasExplicitCoord(props.top)
   if (hasLeft || hasTop) {
     const x = hasLeft ? Number(props.left) : window.innerWidth - w - 24
-    // 显式 top：保持与锚点平行，只做贴边保护，不做“居中式”下移
     const y = hasTop
       ? Number(props.top)
-      : Math.max(24, Math.round((window.innerHeight - (sizeH.value ?? props.minHeight)) / 2))
-    const next = clampToViewport(x, y, w, props.minHeight)
+      : Math.max(24, Math.round((window.innerHeight - h) / 2))
+    const next = clampToViewport(x, y, w, h)
     posLeft.value = next.left
-    posTop.value = hasTop ? Math.max(8, Math.round(Number(props.top))) : next.top
-    // top 仅在完全超出视口底边时上移，绝不额外下移
-    const maxTop = Math.max(8, window.innerHeight - 48)
-    if (posTop.value > maxTop) posTop.value = maxTop
+    posTop.value = next.top
     return
   }
-  const h = sizeH.value ?? props.minHeight
   const x = window.innerWidth - w - 24
   const y = Math.max(24, Math.round((window.innerHeight - h) / 2))
   const next = clampToViewport(x, y, w, h)
@@ -108,12 +106,17 @@ function placeInitial() {
 }
 
 function setPosition(left, top) {
-  posLeft.value = Math.max(8, Math.round(Number(left) || 0))
-  posTop.value = Math.max(8, Math.round(Number(top) || 0))
-  const maxTop = Math.max(8, window.innerHeight - 48)
-  const maxLeft = Math.max(8, window.innerWidth - (rootEl.value?.offsetWidth || sizeW.value) - 8)
-  if (posTop.value > maxTop) posTop.value = maxTop
-  if (posLeft.value > maxLeft) posLeft.value = maxLeft
+  const el = rootEl.value
+  const w = el?.offsetWidth || sizeW.value
+  const h = el?.offsetHeight || sizeH.value || props.height || props.minHeight
+  const next = clampToViewport(
+    Math.round(Number(left) || 0),
+    Math.round(Number(top) || 0),
+    w,
+    h,
+  )
+  posLeft.value = next.left
+  posTop.value = next.top
 }
 
 function onHeaderPointerDown(e) {
@@ -266,6 +269,16 @@ onMounted(() => {
   if (props.dataTermTitle && rootEl.value) {
     rootEl.value.setAttribute('data-term-title', props.dataTermTitle)
   }
+  // 挂载后按实际高度再贴边一次（避免估算高度不足导致底部被裁）
+  requestAnimationFrame(() => {
+    const el = rootEl.value
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    const next = clampToViewport(posLeft.value, posTop.value, rect.width, rect.height)
+    posLeft.value = next.left
+    posTop.value = next.top
+  })
 })
 
 onBeforeUnmount(() => {

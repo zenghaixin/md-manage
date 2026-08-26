@@ -7,6 +7,7 @@ import { TermDialogManager } from '../dialog/dialogManager'
 import { createPromptRuntime } from './prompt'
 import { createAutoConfirmPlugin } from './autoConfirmPlugin'
 import { createClickPlugin } from './clickPlugin'
+import { createGhostPlugin } from './ghostPlugin'
 import { setActiveTermEditor } from '../shared/editorViewRef'
 
 export const pluginKey = new PluginKey('termGlossaryHighlight')
@@ -34,6 +35,7 @@ export const TermGlossaryInteraction = Extension.create({
     })
 
     return [
+      createGhostPlugin({ convertPluginKey }),
       createAutoConfirmPlugin({
         picker,
         convertPluginKey,

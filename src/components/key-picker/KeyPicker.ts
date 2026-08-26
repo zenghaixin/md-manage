@@ -1,9 +1,12 @@
 /**
  * 编辑器快捷键气泡宿主：只接收展示内容与回调。
- * 1–9 选主项；Esc（及可选 Enter）走 esc；可选底部 secondary；可选点外侧关闭。
+ * number 模式：1–9 直接选主项。
+ * tab 模式：先按 Tab 进入选词，再用 1–9 / ↑↓ 选择（未激活时不抢编辑器输入）。
  */
 import { KEY_PICKER_CLASS } from './constants'
 import { ensureKeyPickerStyles } from './styles'
+
+export type KeyPickerSelectMode = 'number' | 'tab'
 
 export type KeyPickerAnchor =
   | HTMLElement
@@ -39,6 +42,10 @@ export type KeyPickerShowOptions = {
   onDismiss?: () => void
   dismissOnOutside?: boolean
   enterAsEsc?: boolean
+  /** number：数字键选择；tab：先 Tab 激活，再数字键 / 方向键选择 */
+  selectMode?: KeyPickerSelectMode
+  /** tab 模式下未激活时不抢焦点，仅 Tab / Esc 由气泡处理 */
+  passive?: boolean
   /** 可选标记来源扩展，便于调试 */
   sourceId?: string
 }
@@ -83,6 +90,14 @@ export class KeyPicker {
   private bindTimer: ReturnType<typeof setTimeout> | null = null
   private promptKey = ''
   private sourceId = ''
+  private activeIndex = 0
+  private itemButtons: HTMLButtonElement[] = []
+  private lastAnchor: KeyPickerAnchor | null = null
+  private selectMode: KeyPickerSelectMode = 'number'
+  private passive = false
+  private keyboardArmed = false
+  private hintEl: HTMLDivElement | null = null
+  private pickRunsRef: Array<() => void> = []
 
   get isOpen() {
     return !!this.el
@@ -114,6 +129,61 @@ export class KeyPicker {
     this.el = null
     this.promptKey = ''
     this.sourceId = ''
+    this.activeIndex = 0
+    this.itemButtons = []
+    this.lastAnchor = null
+    this.selectMode = 'number'
+    this.passive = false
+    this.keyboardArmed = false
+    this.hintEl = null
+    this.pickRunsRef = []
+  }
+
+  /** tab 模式：继续输入时退出选词激活态 */
+  disarmKeyboard() {
+    if (!this.keyboardArmed || this.selectMode !== 'tab') return
+    this.keyboardArmed = false
+    this.activeIndex = 0
+    this.el?.classList.remove(`${KEY_PICKER_CLASS}--armed`)
+    if (this.passive) this.el?.classList.add(`${KEY_PICKER_CLASS}--passive`)
+    if (this.hintEl) this.hintEl.hidden = false
+    this.refreshTabItemHotkeys(this.pickRunsRef)
+  }
+
+  private refreshTabItemHotkeys(pickRuns: Array<() => void>) {
+    this.itemButtons.forEach((btn, i) => {
+      btn.classList.toggle(
+        'is-active',
+        this.keyboardArmed && i === this.activeIndex,
+      )
+      const hotkey = btn.querySelector(`.${KEY_PICKER_CLASS}-hotkey`)
+      if (!hotkey || this.selectMode !== 'tab') return
+      hotkey.textContent = this.keyboardArmed ? `${i + 1}:` : ''
+    })
+  }
+
+  private armKeyboard(pickRuns: Array<() => void>) {
+    if (this.keyboardArmed) return
+    this.keyboardArmed = true
+    this.activeIndex = 0
+    this.el?.classList.add(`${KEY_PICKER_CLASS}--armed`)
+    this.el?.classList.remove(`${KEY_PICKER_CLASS}--passive`)
+    if (this.hintEl) this.hintEl.hidden = true
+    this.refreshTabItemHotkeys(pickRuns)
+  }
+
+  /** 跟打气泡随匹配区间移动时更新锚点 */
+  updateAnchor(anchor: KeyPickerAnchor) {
+    if (!this.el) return
+    this.lastAnchor = anchor
+    positionPicker(this.el, anchor)
+  }
+
+  private setActiveIndex(index: number, pickRuns: Array<() => void>) {
+    if (!pickRuns.length || !this.keyboardArmed) return
+    this.activeIndex =
+      ((index % pickRuns.length) + pickRuns.length) % pickRuns.length
+    this.refreshTabItemHotkeys(pickRuns)
   }
 
   show(opts: KeyPickerShowOptions) {
@@ -131,8 +201,18 @@ export class KeyPicker {
 
     this.promptKey = opts.promptKey || ''
     this.sourceId = String(opts.sourceId ?? '').trim()
+    this.selectMode = opts.selectMode ?? 'number'
+    this.passive = !!opts.passive
+    this.activeIndex = 0
+    this.keyboardArmed = false
+    this.itemButtons = []
+    this.hintEl = null
+    this.pickRunsRef = []
+    this.lastAnchor = opts.anchor
+
     const el = document.createElement('div')
     el.className = KEY_PICKER_CLASS
+    if (this.passive) el.classList.add(`${KEY_PICKER_CLASS}--passive`)
     if (this.sourceId) el.setAttribute('data-source', this.sourceId)
 
     const heading = String(opts.label ?? '').trim()
@@ -154,20 +234,27 @@ export class KeyPicker {
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = `${KEY_PICKER_CLASS}-item`
-      btn.innerHTML = `<span class="${KEY_PICKER_CLASS}-hotkey">${idx}:</span><span>${text}</span>`
+      const hotkeyLabel = this.selectMode === 'tab' ? '' : `${idx}:`
+      btn.innerHTML = `<span class="${KEY_PICKER_CLASS}-hotkey">${hotkeyLabel}</span><span>${text}</span>`
       const pick = () => {
         this.hide()
         opts.onPick(value)
       }
       pickRuns.push(pick)
+      btn.addEventListener('mousedown', (e) => {
+        // 点击选项时不抢编辑器焦点
+        e.preventDefault()
+      })
       btn.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
         pick()
       })
       listEl.appendChild(btn)
+      this.itemButtons.push(btn)
     })
     el.appendChild(listEl)
+    this.pickRunsRef = pickRuns
 
     const runEsc = () => {
       this.hide()
@@ -178,6 +265,15 @@ export class KeyPicker {
     const secondaryRuns = new Map<string, () => void>()
     const foot = document.createElement('div')
     foot.className = `${KEY_PICKER_CLASS}-foot`
+
+    if (this.selectMode === 'tab' && this.passive) {
+      const hint = document.createElement('div')
+      hint.className = `${KEY_PICKER_CLASS}-hint`
+      hint.textContent = 'Tab 进入选词'
+      this.hintEl = hint
+      foot.appendChild(hint)
+    }
+
     for (const item of opts.secondary || []) {
       const run = () => {
         this.hide()
@@ -189,6 +285,9 @@ export class KeyPicker {
       btn.type = 'button'
       btn.className = `${KEY_PICKER_CLASS}-item is-muted`
       btn.innerHTML = `<span class="${KEY_PICKER_CLASS}-hotkey">${escapeHtml(item.key)}:</span><span>${escapeHtml(item.label)}</span>`
+      btn.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+      })
       btn.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -202,6 +301,9 @@ export class KeyPicker {
     cancelBtn.type = 'button'
     cancelBtn.className = `${KEY_PICKER_CLASS}-item is-muted`
     cancelBtn.innerHTML = `<span class="${KEY_PICKER_CLASS}-hotkey">Esc:</span><span>${escapeHtml(escLabel)}</span>`
+    cancelBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+    })
     cancelBtn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
@@ -213,7 +315,14 @@ export class KeyPicker {
     document.body.appendChild(el)
     this.el = el
     positionPicker(el, opts.anchor)
-    this.bindKeys(pickRuns, secondaryRuns, runEsc, !!opts.enterAsEsc)
+    this.bindKeys(
+      pickRuns,
+      secondaryRuns,
+      runEsc,
+      !!opts.enterAsEsc,
+      this.selectMode,
+      this.passive,
+    )
 
     if (opts.dismissOnOutside) {
       this.onPointerDown = (e: PointerEvent) => {
@@ -236,16 +345,66 @@ export class KeyPicker {
     secondaryRuns: Map<string, () => void>,
     runEsc: () => void,
     enterAsEsc: boolean,
+    selectMode: KeyPickerSelectMode,
+    passive: boolean,
   ) {
     this.onKeyDown = (e: KeyboardEvent) => {
       if (!this.el) return
       if (e.isComposing) return
+
       if (e.key === 'Escape' || (enterAsEsc && e.key === 'Enter')) {
         e.preventDefault()
         e.stopPropagation()
         runEsc()
         return
       }
+
+      if (selectMode === 'tab') {
+        if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault()
+          e.stopPropagation()
+          if (!this.keyboardArmed) {
+            this.armKeyboard(pickRuns)
+          }
+          return
+        }
+
+        if (!this.keyboardArmed) {
+          if (passive) return
+          return
+        }
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.setActiveIndex(this.activeIndex + 1, pickRuns)
+          return
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          e.stopPropagation()
+          this.setActiveIndex(this.activeIndex - 1, pickRuns)
+          return
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.stopPropagation()
+          const run = pickRuns[this.activeIndex]
+          if (run) run()
+          return
+        }
+        if (e.key >= '1' && e.key <= '9') {
+          const i = Number(e.key) - 1
+          if (i >= 0 && i < pickRuns.length) {
+            e.preventDefault()
+            e.stopPropagation()
+            pickRuns[i]()
+          }
+          return
+        }
+        return
+      }
+
       const secondary = secondaryRuns.get(e.key)
       if (secondary) {
         e.preventDefault()

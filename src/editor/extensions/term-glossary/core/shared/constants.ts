@@ -61,5 +61,8 @@ export const TERM_REF_FORMER_CLASS = TERM_DASH_KIND_CLASS.former
 /** 无效引用虚线变体 */
 export const TERM_REF_INVALID_CLASS = TERM_DASH_KIND_CLASS.invalid
 
+/** 跟打唯一匹配时的幽灵补全后缀（Decoration.widget，非文档正文） */
+export const TERM_GHOST_SUFFIX_CLASS = 'ext-term-ghost-suffix'
+
 /** 点击词条引用后的描述对话框 */
 export const TERM_POPOVER_CLASS = 'ext-term-popover'
