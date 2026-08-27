@@ -5,8 +5,10 @@ import { Node, mergeAttributes } from '@tiptap/core'
 import { useGlossaryStore } from '../../../../../stores/glossary'
 import {
   TERM_GLOSSARY_ID,
+  TERM_NODE_NAME,
   TERM_REF_CLASS,
   TERM_REF_NODE_NAME,
+  TERM_REF_SELF_CLASS,
   termDashClass,
 } from '../shared/constants'
 import {
@@ -14,7 +16,7 @@ import {
   demoteTermToCandidate,
 } from '../match/match'
 import { ensureTermGlossaryStyles } from '../shared/styles'
-import { formatTermRef } from './syntax'
+import { formatTermRef, sanitizeTermTitle } from './syntax'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -32,6 +34,28 @@ function glossaryHasTitle(title: string): boolean {
   } catch {
     return false
   }
+}
+
+/** 行内引用是否落在某词条定义块的描述内，且与块标题同名 */
+function isSelfRefInTermDef(
+  editor: import('@tiptap/core').Editor,
+  pos: number | null | undefined,
+  refTitle: string,
+): boolean {
+  if (pos == null || typeof pos !== 'number') return false
+  const refKey = sanitizeTermTitle(refTitle)
+  if (!refKey) return false
+  try {
+    const $pos = editor.state.doc.resolve(pos)
+    for (let d = $pos.depth; d > 0; d -= 1) {
+      if ($pos.node(d).type.name !== TERM_NODE_NAME) continue
+      const host = sanitizeTermTitle($pos.node(d).attrs.title)
+      return !!host && host === refKey
+    }
+  } catch {
+    // ignore
+  }
+  return false
 }
 
 export const TermRefNode = Node.create({
@@ -97,21 +121,10 @@ export const TermRefNode = Node.create({
       dom.setAttribute('data-term-title', title)
       dom.setAttribute('data-extension', TERM_GLOSSARY_ID)
 
-      const syncValid = (t: string) => {
-        const valid = glossaryHasTitle(t)
-        dom.className = valid
-          ? TERM_REF_CLASS
-          : `${TERM_REF_CLASS} ${termDashClass('invalid')}`
-        if (valid) dom.removeAttribute('title')
-        else dom.title = '没有对应词条，点击可新建'
-      }
-      syncValid(title)
-
       const textEl = document.createElement('span')
       textEl.className = 'ext-term-ref-text'
       textEl.contentEditable = 'false'
       textEl.textContent = title
-      dom.appendChild(textEl)
 
       const closeBtn = document.createElement('button')
       closeBtn.type = 'button'
@@ -121,6 +134,27 @@ export const TermRefNode = Node.create({
       closeBtn.setAttribute('aria-label', '取消确认')
       closeBtn.title = '取消确认'
       closeBtn.textContent = '×'
+
+      const syncValid = (t: string, atPos?: number | null) => {
+        const pos = atPos ?? (typeof getPos === 'function' ? getPos() : null)
+        if (isSelfRefInTermDef(editor, pos, t)) {
+          dom.className = TERM_REF_SELF_CLASS
+          dom.removeAttribute('title')
+          closeBtn.hidden = true
+          return
+        }
+        closeBtn.hidden = false
+        const valid = glossaryHasTitle(t)
+        dom.className = valid
+          ? TERM_REF_CLASS
+          : `${TERM_REF_CLASS} ${termDashClass('invalid')}`
+        if (valid) dom.removeAttribute('title')
+        else dom.title = '没有对应词条，点击可新建'
+      }
+      syncValid(title, typeof getPos === 'function' ? getPos() : null)
+
+      dom.appendChild(textEl)
+
       closeBtn.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -147,7 +181,10 @@ export const TermRefNode = Node.create({
       let unsub: (() => void) | null = null
       try {
         unsub = useGlossaryStore().$subscribe(() => {
-          syncValid(dom.getAttribute('data-term-title') || '')
+          syncValid(
+            dom.getAttribute('data-term-title') || '',
+            typeof getPos === 'function' ? getPos() : null,
+          )
         })
       } catch {
         // Pinia 未就绪
@@ -168,7 +205,7 @@ export const TermRefNode = Node.create({
           const nextTitle = String(updated.attrs.title ?? '').trim()
           textEl.textContent = nextTitle
           dom.setAttribute('data-term-title', nextTitle)
-          syncValid(nextTitle)
+          syncValid(nextTitle, typeof getPos === 'function' ? getPos() : null)
           return true
         },
         destroy() {

@@ -190,6 +190,18 @@ export function enclosingTerm(
   return termRanges.find((r) => from >= r.from && to <= r.to)
 }
 
+/** 区间是否落在已确认的词条定义块内（描述由 renderDescriptionHtml 单独处理） */
+export function isInsideTermDefinition(
+  doc: ProseMirrorNode,
+  from: number,
+  to: number = from,
+): boolean {
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return false
+  const start = Math.min(from, to)
+  const end = Math.max(from, to)
+  return !!enclosingTerm(start, end, collectTermRanges(doc))
+}
+
 export function isIgnoredInText(
   text: string,
   matchFrom: number,
@@ -656,6 +668,7 @@ export function findConfirmHitOnMatchBreak(
   | { kind: 'former'; hit: FormerHitMatch }
   | { kind: 'candidate'; hit: CandidateMatch }
   | null {
+  if (isInsideTermDefinition(doc, cursor)) return null
   const ctx = textBeforeCursorInBlock(doc, cursor)
   if (!ctx || ctx.text.length < 2) return null
 
@@ -706,6 +719,7 @@ export function findConfirmHitOnMaximalMatch(
   | { kind: 'former'; hit: FormerHitMatch }
   | { kind: 'candidate'; hit: CandidateMatch }
   | null {
+  if (isInsideTermDefinition(doc, cursor)) return null
   const ctx = textBeforeCursorInBlock(doc, cursor)
   if (!ctx || !ctx.text) return null
 
@@ -754,6 +768,7 @@ export function findConfirmHitOnExtendableIdle(
   | { kind: 'former'; hit: FormerHitMatch }
   | { kind: 'candidate'; hit: CandidateMatch }
   | null {
+  if (isInsideTermDefinition(doc, cursor)) return null
   const ctx = textBeforeCursorInBlock(doc, cursor)
   if (!ctx || !ctx.text) return null
 
@@ -785,7 +800,7 @@ export function findConfirmHitOnExtendableIdle(
   }
 
   // 无短词条时：扫光标前最长后缀（勿要求整段文本都是前缀，否则「造成暴击」不弹）
-  // 多候选 → 气泡；唯一 → 交给幽灵，此处不弹
+  // 多候选 → 气泡；唯一 → 停手气泡 + 幽灵 Tab + 灰线点击
   if (ctx.text.length >= 2 && !exact) {
     for (let len = ctx.text.length; len >= 2; len--) {
       const prefix = ctx.text.slice(-len)
@@ -803,7 +818,16 @@ export function findConfirmHitOnExtendableIdle(
         return null
       }
       if (candidates.length === 1) {
-        // 唯一更长匹配走幽灵，不要继续缩成更短多候选前缀
+        const prefixResult = hitFromAmbiguousPrefix(
+          ctx.blockStart,
+          cursor,
+          prefix,
+          storeTitles,
+        )
+        if (prefixResult) {
+          return finalizePromptResult(doc, prefixResult, 'delayed')
+        }
+        // 唯一更长匹配：停手弹窗 + 幽灵 Tab + 灰线点击，三选一
         return null
       }
     }
@@ -890,6 +914,8 @@ export function scanTermMatches(doc: ProseMirrorNode): TextScanResult {
     if (inRange(textFrom, textFrom + node.nodeSize, codeRanges)) return
 
     const selfTerm = enclosingTerm(textFrom, textFrom + 1, termRanges)
+    // 定义块描述走 renderDescriptionHtml；PM 内不再扫灰线/曾用名/自动确认
+    if (selfTerm) return
     const text = node.text
     const localTaken: Array<{ from: number; to: number }> = []
 

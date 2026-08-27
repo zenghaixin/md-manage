@@ -5,6 +5,7 @@
  * pointer 捕获挡不住后续 mouseup/click，它们仍可能打到左侧文件树，
  * 触发 loadFile，把刚写上的备注冲掉（表现为「刷新/跳转且备注没了」）。
  */
+import { nextFloatZIndex } from '../draggable-float'
 import { beginUiGestureLock } from '../../editor/shellEvents'
 import type { SelectionAction } from './types'
 import { ensureSelectionActionStyles } from './styles'
@@ -83,6 +84,8 @@ export class SelectionActionBubble {
 
       root.appendChild(btn)
     }
+
+    root.style.zIndex = String(nextFloatZIndex())
 
     document.body.appendChild(root)
     this.el = root

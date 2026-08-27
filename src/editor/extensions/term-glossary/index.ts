@@ -189,6 +189,8 @@ const termGlossaryExtension: MarkdownExtension = {
     bindNotTermSelectionAction()
     const { bindSetTermSelectionAction } = await import('./core/panel/setTermAction')
     bindSetTermSelectionAction()
+    const { bindConfirmTermRefSelectionAction } = await import('./core/panel/confirmTermRefAction')
+    bindConfirmTermRefSelectionAction()
     const { bindTermGlossaryPanel } = await import('./core/panel/glossarySidePanel')
     bindTermGlossaryPanel()
     bindGlobalNewTermShortcut()

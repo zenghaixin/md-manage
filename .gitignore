@@ -12,8 +12,8 @@ dist
 dist-ssr
 *.local
 
-# 本地文档内容
-md/
+# 本地文档内容（暂时纳入 git，便于共享本次词条测试数据；恢复时取消下行注释）
+# md/
 
 # 运行时本地词库（由 API 读写，勿提交）
 **/term-glossary/data/

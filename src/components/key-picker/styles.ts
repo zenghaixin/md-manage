@@ -9,6 +9,7 @@ const STYLE_ATTR = 'data-ed-key-picker-style'
 export const KEY_PICKER_STYLES = `
 .${KEY_PICKER_CLASS} {
   position: fixed;
+  /* 实际 z-index 由 KeyPicker.show 写入 inline（nextFloatZIndex） */
   z-index: 10020;
   min-width: 140px;
   max-width: 280px;

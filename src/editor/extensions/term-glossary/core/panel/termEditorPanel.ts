@@ -2,6 +2,7 @@
  * 词条新建 / 编辑：挂在可拖拽浮层；未确认关闭则丢弃。
  */
 import type { Editor } from '@tiptap/core'
+import type { EditorView } from '@tiptap/pm/view'
 import { api } from '../../../../../api'
 import { useGlossaryStore } from '../../../../../stores/glossary'
 import {
@@ -54,6 +55,8 @@ type CreateSession = {
   /** 确认后把该选区包成 termRef */
   selectionFrom?: number
   selectionTo?: number
+  /** 从词条编辑浮层描述区发起：确认后在 lite 编辑器写 term[] */
+  descWrapView?: EditorView | null
 }
 
 type EditSession = {
@@ -89,6 +92,9 @@ type ConfirmPayload = {
 
 let session: Session | null = null
 let floatMount: FloatHostMount | null = null
+/** 编辑浮层已打开时，从描述区叠开的新建浮层 */
+let nestedCreateSession: CreateSession | null = null
+let nestedCreateMount: FloatHostMount | null = null
 /** 从哪个弹窗打开：贴其右侧 */
 let openBeside: CascadeAnchor | null = null
 /** 来源父容器（首扇相对容器测距） */
@@ -105,25 +111,19 @@ function teardownMount() {
   floatMount = null
 }
 
-function discardSession() {
-  session = null
-  openBeside = null
-  openContainer = null
+function closeNestedCreate() {
+  closeFloatHost(nestedCreateMount)
+  nestedCreateMount = null
+  nestedCreateSession = null
 }
 
-function present() {
-  const s = session
-  if (!s) return
-  ensureTermGlossaryStyles()
-  teardownMount()
-
+function buildFloatHostProps(
+  s: Session,
+  mountRef: { current: FloatHostMount | null },
+  onCancel: () => void,
+) {
   const isCreate = s.mode === 'create'
-  const besideRect = openBeside
-  const containerRect = openContainer
-  openBeside = null
-  openContainer = null
-  const remarkId =
-    s.mode === 'create' ? '' : String(s.remarkId || '').trim()
+  const remarkId = s.mode === 'create' ? '' : String(s.remarkId || '').trim()
   const store = useGlossaryStore()
   const editTitle =
     s.mode === 'create' ? '' : sanitizeTermTitle(s.title) || s.title
@@ -141,8 +141,82 @@ function present() {
     ? normalizeTermRefs(store.getTerm(editTitle)?.refs, initialRefSources)
     : {}
 
-  let mount!: FloatHostMount
-  mount = openFloatHost({
+  return ({ place, zIndex }: { place: { left: number; top: number }; zIndex: number }) => ({
+    mode: isCreate ? 'create' : 'edit',
+    initialTitle: isCreate
+      ? String((s as CreateSession).initialTitle || '')
+      : s.title,
+    initialDescription: isCreate ? '' : s.description,
+    initialTargetPath:
+      isCreate && s.mode === 'create'
+        ? String(s.preferredTargetPath || GLOSSARY_DEFAULT_FILE)
+        : '',
+    initialSourcePath,
+    initialRefs,
+    initialRefSources,
+    remarkId,
+    floatLeft: place.left,
+    floatTop: place.top,
+    zIndex,
+    onConfirm: (payload: ConfirmPayload) => {
+      void handleConfirm(payload)
+    },
+    onCancel,
+    onFocus: () => {
+      mountRef.current?.host.setZIndex?.(nextFloatZIndex())
+    },
+  })
+}
+
+function mountCreateFloat(
+  s: CreateSession,
+  besideRect?: CascadeAnchor | null,
+  containerRect?: CascadeAnchor | null,
+  nested = false,
+) {
+  ensureTermGlossaryStyles()
+  const mountRef = { current: null as FloatHostMount | null }
+  const mount = openFloatHost({
+    cascadeId: nested ? `${CASCADE_ID}-nested` : CASCADE_ID,
+    width: EDITOR_W,
+    height: EDITOR_H,
+    besideRect,
+    containerRect,
+    rootClassName: 'ext-term-editor-float-root',
+    component: TermEditorFloatHost,
+    props: buildFloatHostProps(s, mountRef, () => {
+      if (nested) closeNestedCreate()
+      else closeDiscard()
+    }),
+  })
+  mountRef.current = mount
+  if (nested) {
+    nestedCreateMount = mount
+    nestedCreateSession = s
+  } else {
+    floatMount = mount
+  }
+}
+
+function discardSession() {
+  session = null
+  openBeside = null
+  openContainer = null
+}
+
+function present() {
+  const s = session
+  if (!s) return
+  ensureTermGlossaryStyles()
+  teardownMount()
+
+  const besideRect = openBeside
+  const containerRect = openContainer
+  openBeside = null
+  openContainer = null
+
+  const mountRef = { current: null as FloatHostMount | null }
+  floatMount = openFloatHost({
     cascadeId: CASCADE_ID,
     width: EDITOR_W,
     height: EDITOR_H,
@@ -150,38 +224,16 @@ function present() {
     containerRect,
     rootClassName: 'ext-term-editor-float-root',
     component: TermEditorFloatHost,
-    props: ({ place, zIndex }) => ({
-      mode: isCreate ? 'create' : 'edit',
-      initialTitle: isCreate
-        ? String((s as CreateSession).initialTitle || '')
-        : s.title,
-      initialDescription: isCreate ? '' : s.description,
-      initialTargetPath:
-        isCreate && s.mode === 'create'
-          ? String(s.preferredTargetPath || GLOSSARY_DEFAULT_FILE)
-          : '',
-      initialSourcePath,
-      initialRefs,
-      initialRefSources,
-      remarkId,
-      floatLeft: place.left,
-      floatTop: place.top,
-      zIndex,
-      onConfirm: (payload: ConfirmPayload) => {
-        void handleConfirm(payload)
-      },
-      onCancel: () => {
-        closeDiscard()
-      },
-      onFocus: () => {
-        mount.host.setZIndex?.(nextFloatZIndex())
-      },
-    }),
+    props: buildFloatHostProps(s, mountRef, () => closeDiscard()),
   })
-  floatMount = mount
+  mountRef.current = floatMount
 }
 
 function closeDiscard() {
+  if (nestedCreateMount) {
+    closeNestedCreate()
+    return
+  }
   discardSession()
   teardownMount()
 }
@@ -319,7 +371,8 @@ async function handleCatalogConfirm(
 }
 
 async function handleConfirm(payload: ConfirmPayload) {
-  const s = session
+  const nested = nestedCreateSession
+  const s = nested ?? session
   if (!s) return
 
   const title = sanitizeTermTitle(payload.title)
@@ -337,6 +390,7 @@ async function handleConfirm(payload: ConfirmPayload) {
   }
 
   if (s.mode === 'catalog-edit') {
+    if (nested) return
     await handleCatalogConfirm(s, {
       title,
       description,
@@ -408,9 +462,12 @@ async function handleConfirm(payload: ConfirmPayload) {
       await alertError(err instanceof Error ? err.message : '新建词条失败')
       return
     }
-    closeAfterConfirm()
+    if (nested) closeNestedCreate()
+    else closeAfterConfirm()
     return
   }
+
+  if (nested) return
 
   // edit（当前文档定义块）
   const editor = s.editor
@@ -524,14 +581,30 @@ async function handleConfirm(payload: ConfirmPayload) {
 
 function wrapCreateSelectionAsTermRef(s: CreateSession, title: string) {
   if (
-    !s.editor ||
-    s.editor.isDestroyed ||
     typeof s.selectionFrom !== 'number' ||
     typeof s.selectionTo !== 'number' ||
     s.selectionTo <= s.selectionFrom
   ) {
     return
   }
+
+  const view = s.descWrapView
+  if (view?.dom?.isConnected) {
+    try {
+      const size = view.state.doc.content.size
+      const from = Math.max(0, Math.min(s.selectionFrom, size))
+      const to = Math.max(from, Math.min(s.selectionTo, size))
+      const tr = view.state.tr
+      if (replaceRangeWithTermRef(tr, view.state.schema, from, to, title)) {
+        view.dispatch(tr)
+      }
+    } catch (err) {
+      console.warn('[term-editor] wrap desc selection as termRef failed:', err)
+    }
+    return
+  }
+
+  if (!s.editor || s.editor.isDestroyed) return
   try {
     const size = s.editor.state.doc.content.size
     const from = Math.max(0, Math.min(s.selectionFrom, size))
@@ -619,6 +692,30 @@ export function openTermEditorCreate(opts: {
     },
     beside,
   )
+}
+
+/** 词条编辑浮层描述区选区「设为词条」：叠开新建浮层，标题预填选中文案 */
+export function openTermEditorCreateFromDesc(opts: {
+  initialTitle: string
+  descView: EditorView
+  selectionFrom: number
+  selectionTo: number
+  besideRect: CascadeAnchor
+}) {
+  const createSession: CreateSession = {
+    mode: 'create',
+    editor: getActiveTermEditor(),
+    preferredTargetPath: resolveCreateTargetPath(),
+    initialTitle: sanitizeTermTitle(opts.initialTitle) || undefined,
+    selectionFrom: opts.selectionFrom,
+    selectionTo: opts.selectionTo,
+    descWrapView: opts.descView,
+  }
+  if (session?.mode === 'edit' && floatMount) {
+    mountCreateFloat(createSession, opts.besideRect, null, true)
+    return
+  }
+  openSession(createSession, opts.besideRect)
 }
 
 function resolveCreateTargetPath(explicit?: string): string {

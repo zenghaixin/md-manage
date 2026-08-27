@@ -9,6 +9,8 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { DecorationSet, EditorView } from '@tiptap/pm/view'
 import { useGlossaryStore } from '../../../../../stores/glossary'
 import {
+  TERM_DESC_CLASS,
+  TERM_NODE_CLASS,
   TERM_REF_CLASS,
   TERM_REF_CANDIDATE_CLASS,
   TERM_REF_FORMER_CLASS,
@@ -62,6 +64,8 @@ function handleDashClick(
 ): boolean {
   const target = event.target as HTMLElement | null
   if (!target) return false
+  // 定义块描述由 TermNodeView + renderDescriptionHtml 处理，勿走正文「不是词条」气泡
+  if (target.closest?.(`.${TERM_NODE_CLASS} .${TERM_DESC_CLASS}`)) return false
 
   const formerEl = target.closest?.(
     `.${TERM_REF_FORMER_CLASS}`,

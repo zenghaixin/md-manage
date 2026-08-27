@@ -26,6 +26,7 @@ import {
 } from './blockTargets'
 import { REMARK_NODE_NAME } from './constants'
 import { TERM_NODE_NAME } from '../term-glossary/core/shared/constants'
+import { isTermEditorDescView } from '../term-glossary/core/panel/termEditorDescContext'
 import { isRemarkBoundaryExited } from './node'
 import { ensureRemarkStyles } from './styles'
 
@@ -40,6 +41,8 @@ function bindSelectionAction() {
     label: '备注',
     order: 20,
     isVisible: (ctx) => {
+      // 词条编辑浮层内的描述：备注只作用于整块词条（右上角按钮），不走选区气泡
+      if (isTermEditorDescView(ctx.view)) return false
       const block = findBlockRemarkTargetAt(ctx.view.state.doc, ctx.from, ctx.to)
       // 词条定义块：备注入口在右上角，不走选区气泡
       if (block?.node.type.name === TERM_NODE_NAME) return false

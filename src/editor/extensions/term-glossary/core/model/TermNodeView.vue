@@ -1,31 +1,49 @@
 ﻿<script setup>
 /**
  * 词条定义块：只读展示；选中后右上角备注 / 编辑 / 删除。
- * 描述里的词条引用可点开预览弹窗。
+ * 描述区与预览弹窗共用 renderDescriptionHtml（非 TipTap 子文档渲染）。
  */
-import { computed, onMounted, onUnmounted } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
 import { NodeSelection } from '@tiptap/pm/state'
-import { NodeViewContent, NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
+import { NodeViewWrapper, nodeViewProps } from '@tiptap/vue-3'
 import AppIcon from '../../../../../components/AppIcon.vue'
+import { getKeyPicker } from '../../../../../components/key-picker'
+import { useGlossaryStore } from '../../../../../stores/glossary'
 import { applyRemarkToSelection } from '../../../remark/apply'
 import { openRemarkById } from '../../../remark/bridge'
+import { requestSaveCurrentFile } from '../../../../shellEvents'
 import {
   TERM_REF_CANDIDATE_CLASS,
   TERM_REF_CLASS,
   TERM_REF_INVALID_CLASS,
 } from '../shared/constants'
 import { FLASH_MS, registerTermFlashHandle } from '../shared/flashTerm'
+import { collectGlossary } from '../match/match'
 import { offerCreateMissingTerm } from '../dialog/createMissingTerm'
+import { renderDescriptionHtml } from '../dialog/dialogHtml'
 import { openTermPreview } from '../dialog/openPreview'
-import { tryHandleTermDashClick } from '../plugins/clickPlugin'
 import { openTermEditorEdit } from '../panel/termEditorPanel'
-import { confirmDeleteTermDefinition } from './termOps'
-import { sanitizeTermTitle } from './syntax'
+import { confirmDeleteTermDefinition, replaceTermDefinition } from './termOps'
+import { serializeTermDescriptionFromNode } from './serializeDesc'
+import { confirmTitleInMarkdown, sanitizeTermTitle } from './syntax'
+import { ensureTermGlossaryStyles } from '../shared/styles'
+
+/** 定义块内候选气泡来源（卸载时仅关此来源） */
+const TERM_NODE_PICKER_SOURCE = 'term-node-view'
 
 const props = defineProps(nodeViewProps)
 
 let stopFlashRegister = null
 let flashAnim = null
+let stopStoreWatch = null
+
+const descHost = ref(null)
 
 const titleText = computed(
   () =>
@@ -38,37 +56,105 @@ const hasRemark = computed(
   () => !!String(props.node.attrs.remarkId ?? '').trim(),
 )
 
+function glossaryTitles() {
+  try {
+    return Array.from(collectGlossary(props.editor.state.doc).keys())
+  } catch {
+    return []
+  }
+}
+
 function termRootEl() {
   const pos = props.getPos()
   if (typeof pos !== 'number') return null
   return props.editor.view.nodeDOM(pos)
 }
 
-function selectWholeTerm(event) {
-  if (event.target?.closest?.('.ext-term-actions')) return
-  // 描述里的灰线候选 / 曾用名：弹出确认，不选中整块
-  if (tryHandleTermDashClick(props.editor.view, event)) return
-  const ref = event.target?.closest?.(`.${TERM_REF_CLASS}`)
-  if (ref && !ref.classList.contains(TERM_REF_CANDIDATE_CLASS)) {
-    event.preventDefault()
-    event.stopPropagation()
-    const nested = (
-      ref.getAttribute('data-term-title') ||
-      ref.querySelector('.ext-term-ref-text')?.textContent ||
-      ref.textContent ||
-      ''
-    ).trim()
-    if (!nested) return
-    if (
-      ref.classList.contains(TERM_REF_INVALID_CLASS) ||
-      ref.classList.contains('ext-term-ref-invalid')
-    ) {
-      void offerCreateMissingTerm(nested, props.editor.view)
-      return
-    }
-    openTermPreview(nested, ref)
+function renderDesc() {
+  const host = descHost.value
+  if (!host) return
+  host.replaceChildren()
+  const desc = renderDescriptionHtml(
+    serializeTermDescriptionFromNode(props.node),
+    glossaryTitles(),
+    titleText.value,
+  )
+  host.appendChild(desc)
+}
+
+function confirmCandidate(matchTitle, confirmTitle) {
+  const pos = props.getPos()
+  if (typeof pos !== 'number') return
+  const node = props.editor.state.doc.nodeAt(pos)
+  if (!node) return
+  const currentDesc = serializeTermDescriptionFromNode(node)
+  const nextDescription = confirmTitleInMarkdown(
+    currentDesc,
+    matchTitle,
+    confirmTitle,
+  )
+  if (nextDescription === currentDesc) return
+  replaceTermDefinition(props.editor, {
+    pos,
+    title: titleText.value,
+    description: nextDescription,
+  })
+  requestSaveCurrentFile()
+  renderDesc()
+}
+
+function onDescClick(e) {
+  const target = e.target
+  const host = descHost.value
+  if (!host) return
+
+  const candidate = target?.closest?.(`.${TERM_REF_CANDIDATE_CLASS}`)
+  if (candidate && host.contains(candidate)) {
+    e.preventDefault()
+    e.stopPropagation()
+    const matchTitle =
+      candidate.getAttribute('data-term-title') || candidate.textContent || ''
+    const raw =
+      candidate.getAttribute('data-term-candidates') || matchTitle
+    const candidates = raw
+      .split('\u0001')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    getKeyPicker().show({
+      anchor: candidate,
+      titles: candidates,
+      sourceId: TERM_NODE_PICKER_SOURCE,
+      selectMode: 'tab',
+      passive: true,
+      onPick: (picked) => {
+        confirmCandidate(matchTitle.trim(), picked)
+      },
+    })
     return
   }
+
+  const refEl = target?.closest?.(`.${TERM_REF_CLASS}`)
+  if (!refEl || !host.contains(refEl)) return
+  e.preventDefault()
+  e.stopPropagation()
+  const nested = (
+    refEl.getAttribute('data-term-title') ||
+    refEl.textContent ||
+    ''
+  ).trim()
+  if (!nested) return
+  if (
+    refEl.classList.contains(TERM_REF_INVALID_CLASS) ||
+    refEl.classList.contains('ext-term-ref-invalid')
+  ) {
+    void offerCreateMissingTerm(nested, props.editor.view)
+    return
+  }
+  openTermPreview(nested, refEl)
+}
+
+function selectWholeTerm(event) {
+  if (event.target?.closest?.('.ext-term-actions')) return
   const pos = props.getPos()
   if (typeof pos !== 'number') return
   event.preventDefault()
@@ -187,16 +273,42 @@ function triggerFlash() {
   )
 }
 
+watch(
+  () => [
+    serializeTermDescriptionFromNode(props.node),
+    titleText.value,
+    props.node.attrs.remarkId,
+  ],
+  () => {
+    renderDesc()
+  },
+)
+
 onMounted(() => {
+  ensureTermGlossaryStyles()
+  renderDesc()
   stopFlashRegister = registerTermFlashHandle({
     getTitle: () => String(props.node.attrs.title ?? ''),
     flash: triggerFlash,
   })
+  try {
+    stopStoreWatch = useGlossaryStore().$subscribe(() => {
+      renderDesc()
+    })
+  } catch {
+    // Pinia 未就绪
+  }
 })
 
-onUnmounted(() => {
+onBeforeUnmount(() => {
   stopFlashRegister?.()
   stopFlashRegister = null
+  stopStoreWatch?.()
+  stopStoreWatch = null
+  const picker = getKeyPicker()
+  if (picker.isOpen && picker.currentSourceId === TERM_NODE_PICKER_SOURCE) {
+    picker.hide()
+  }
   try {
     flashAnim?.cancel?.()
   } catch {
@@ -253,10 +365,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <NodeViewContent
+    <div
+      ref="descHost"
       class="ext-term-desc"
-      as="div"
       contenteditable="false"
+      @click="onDescClick"
     />
   </NodeViewWrapper>
 </template>

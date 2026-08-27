@@ -20,7 +20,6 @@ import {
   findConfirmHitOnMatchBreak,
   findConfirmHitOnMaximalMatch,
   findConfirmHitOnExtendableIdle,
-  findUniquePrefixGhost,
 } from '../match/match'
 import { setActiveTermEditorView } from '../shared/editorViewRef'
 import type { KeyPicker } from '../../../../../components/key-picker'
@@ -234,16 +233,11 @@ export function createAutoConfirmPlugin(opts: {
         return true
       }
 
-      /** 还可延长（如 暴击→暴击率）→ 停顿后弹相关；唯一匹配由幽灵补全 */
+      /** 还可延长（如 暴击→暴击率）或前缀匹配（如 鲁迪→鲁迪乌斯）→ 停顿后弹相关 */
       const tryExtendablePrompt = (view: EditorView): boolean => {
         if (view.isDestroyed) return false
         if (document.activeElement?.closest?.('.ext-term-title')) return false
         if (!view.state.selection.empty) return false
-        if (
-          findUniquePrefixGhost(view.state.doc, view.state.selection.from)
-        ) {
-          return false
-        }
         const found = findConfirmHitOnExtendableIdle(
           view.state.doc,
           view.state.selection.from,

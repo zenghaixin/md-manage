@@ -248,6 +248,25 @@ html.dark .ext-term-node.is-flash,
   color: var(--muted, #5a6b75);
 }
 
+/* 定义块描述内与标题同名的 term[]：与预览弹窗一致，呈正文样式 */
+.ext-term-desc .ext-term-ref-self {
+  display: inline;
+  color: inherit;
+  cursor: inherit;
+  padding-right: 0;
+  user-select: text;
+  vertical-align: baseline;
+}
+
+.ext-term-desc .ext-term-ref-self::before,
+.ext-term-desc .ext-term-ref-self::after {
+  content: none;
+}
+
+.ext-term-desc .ext-term-ref-self .ext-term-ref-close {
+  display: none;
+}
+
 /* 已确认引用：蓝色 + []，右上角可取消 */
 .ext-term-ref {
   position: relative;

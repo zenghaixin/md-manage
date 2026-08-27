@@ -14,6 +14,9 @@ export const TERM_HEADER_CLASS = 'ext-term-header'
 /** 已确认引用高亮 */
 export const TERM_REF_CLASS = 'ext-term-ref'
 
+/** 定义块描述内与标题同名的引用：正文样式，不可点预览 */
+export const TERM_REF_SELF_CLASS = 'ext-term-ref-self'
+
 /**
  * 词条虚线高亮：统一基类 + 变体，后续加颜色只加 kind / CSS 变量即可。
  * Decoration / DOM 都走这里，避免每套虚线各写一套 class。

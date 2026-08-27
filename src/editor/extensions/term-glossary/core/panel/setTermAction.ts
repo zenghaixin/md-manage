@@ -18,6 +18,7 @@ export function bindSetTermSelectionAction(): void {
     label: '设置词条',
     order: 18,
     isVisible: (ctx) => {
+      if (ctx.view.dom.closest?.('.ext-term-editor-float-root')) return false
       const title = sanitizeTermTitle(ctx.text)
       if (!title) return false
       const { selection } = ctx.view.state

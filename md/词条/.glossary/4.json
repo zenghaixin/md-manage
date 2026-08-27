@@ -1,0 +1,149 @@
+{
+  "list": [
+    "北神流",
+    "帝级",
+    "格雷拉特家",
+    "剑神流",
+    "米格路迪亚族",
+    "魔力",
+    "七大列强",
+    "神级",
+    "圣级",
+    "水神流",
+    "苏帕迪亚族",
+    "王级",
+    "长耳族"
+  ],
+  "terms": {
+    "魔力": {
+      "title": "魔力",
+      "sourcePath": "词条/默认词条.md",
+      "description": "term[六面世界]中驱动魔法与部分武技的能量。term[鲁迪乌斯]因前世记忆与过人的魔力总量，得以在幼年就掌握term[无咏唱魔法]。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "剑神流": {
+      "title": "剑神流",
+      "sourcePath": "词条/默认词条.md",
+      "description": "三剑流之一，崇尚先下手为强的拔刀与突进。term[艾莉丝]与term[基列奴]皆出身此派，圣地在term[剑之圣域]。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "水神流": {
+      "title": "水神流",
+      "sourcePath": "词条/默认词条.md",
+      "description": "三剑流之一，以防御、反击与预判见长。最高奥义为「无」；term[水神蕾达]是当代宗主。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "北神流": {
+      "title": "北神流",
+      "sourcePath": "词条/默认词条.md",
+      "description": "三剑流之一，不拘形式、强调在任何姿态下都能出招。term[保罗]早年修习此派，亦杂学term[剑神流]与term[水神流]。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "七大列强": {
+      "title": "七大列强",
+      "sourcePath": "词条/默认词条.md",
+      "description": "以武力排定的世界七强。现行序列包括term[奥尔斯特德]（龙神）、term[拉普拉斯]残响相关席位、以及北神、剑神、水神等；排名会随死亡与挑战改写。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "神级": {
+      "title": "神级",
+      "sourcePath": "词条/默认词条.md",
+      "description": "魔法与剑术评价中的最高档，之上几乎只余传说。term[扰乱雷击]被评定为term[圣级]偏上，term[核爆]则接近神级破坏力。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "圣级": {
+      "title": "圣级",
+      "sourcePath": "词条/默认词条.md",
+      "description": "仅次于term[神级]的评价。能够单独改变战场局势；term[基列奴]的剑术、term[洛琪希]的水魔法都长期停留在这一档附近。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "王级": {
+      "title": "王级",
+      "sourcePath": "词条/默认词条.md",
+      "description": "介于圣与帝之间的实力标尺。term[保罗]全盛时剑术约在上级到王级之间，足以在王国军中独当一面。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "帝级": {
+      "title": "帝级",
+      "sourcePath": "词条/默认词条.md",
+      "description": "term[圣级]之上、term[神级]之下。能够单人对抗军团；历史上term[拉普拉斯战役]中的列强多在此档。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "米格路迪亚族": {
+      "title": "米格路迪亚族",
+      "sourcePath": "词条/默认词条.md",
+      "description": "term[魔大陆]的长寿种族，蓝发、寿命极长、族内可用心灵感应交流。term[洛琪希]即出身此族，因无法使用族内感应而被视为异类。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "苏帕迪亚族": {
+      "title": "苏帕迪亚族",
+      "sourcePath": "词条/默认词条.md",
+      "description": "魔族中的超族，额上有红宝石、发绿。因term[拉普拉斯战役]中被下诅咒，族人曾被世间视为屠杀者；term[卢德格尔]是少数仍在旅行的幸存者。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "长耳族": {
+      "title": "长耳族",
+      "sourcePath": "词条/默认词条.md",
+      "description": "亦称精灵。寿命长、魔力适性高。term[希露菲]有长耳族血统，因此幼年在term[布埃纳村]遭到排挤。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    },
+    "格雷拉特家": {
+      "title": "格雷拉特家",
+      "sourcePath": "词条/默认词条.md",
+      "description": "阿斯拉贵族中以好色与剑术闻名的旁支。term[保罗]离家后落脚term[菲托亚领]，生下term[鲁迪乌斯]、term[诺伦]与term[艾莎]。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": []
+    }
+  }
+}

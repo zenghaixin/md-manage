@@ -87,8 +87,44 @@ export function resolveTerm(
 }
 
 /**
- * 弹窗预览：仅给裸命中加灰线候选（已确认 term[] 在 Markdown 阶 段已变成 span）。
+ * 弹窗预览：裸命中加灰线候选；词库已有整词直接显示为已确认引用；前缀（如 鲁迪→鲁迪乌斯）加灰线。
  */
+function collectPrefixStrings(titles: string[], selfTitle: string): string[] {
+  const storeTitles = [
+    ...new Set(titles.map(sanitizeTermTitle).filter(Boolean)),
+  ]
+  const titleSet = new Set(storeTitles)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const t of storeTitles) {
+    if (t === selfTitle) continue
+    for (let len = 2; len < t.length; len++) {
+      const p = t.slice(0, len)
+      if (p === selfTitle || titleSet.has(p) || seen.has(p)) continue
+      const longer = storeTitles.filter(
+        (x) => x.startsWith(p) && x.length > p.length && x !== selfTitle,
+      )
+      if (longer.length >= 1) {
+        seen.add(p)
+        out.push(p)
+      }
+    }
+  }
+  return out.sort((a, b) => b.length - a.length || a.localeCompare(b, 'zh'))
+}
+
+function longerTitlesWithPrefixForDesc(
+  prefix: string,
+  titles: string[],
+  selfTitle: string,
+): string[] {
+  const p = String(prefix ?? '').trim()
+  if (!p) return []
+  return titles
+    .filter((t) => t.startsWith(p) && t.length > p.length && t !== selfTitle)
+    .sort((a, b) => b.length - a.length || a.localeCompare(b, 'zh'))
+}
+
 function highlightCandidatesInElement(
   root: HTMLElement,
   titles: string[],
@@ -98,6 +134,9 @@ function highlightCandidatesInElement(
     .filter((t) => t && t !== selfTitle)
     .sort((a, b) => b.length - a.length)
   if (!sorted.length) return
+
+  const prefixStrings = collectPrefixStrings(titles, selfTitle)
+  const titleSet = new Set(sorted)
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) => {
@@ -120,30 +159,68 @@ function highlightCandidatesInElement(
 
   for (const textNode of textNodes) {
     const text = textNode.data
-    type Hit = { from: number; to: number; title: string; candidates: string[] }
+    type Hit = {
+      from: number
+      to: number
+      title: string
+      candidates: string[]
+      /** 词库已有整词 → 蓝色已确认样式 */
+      asConfirmed: boolean
+    }
     const hits: Hit[] = []
     const taken: Array<{ from: number; to: number }> = []
+    const overlaps = (from: number, to: number) =>
+      taken.some((r) => from < r.to && to > r.from)
 
+    // 1) 整词命中（长词优先）
     for (const termTitle of sorted) {
       const re = titlePattern(termTitle)
       let m: RegExpExecArray | null
       while ((m = re.exec(text)) !== null) {
         const from = m.index
         const to = from + m[0].length
-        if (taken.some((r) => from < r.to && to > r.from)) continue
-        taken.push({ from, to })
+        if (overlaps(from, to)) continue
         const candidates = relatedTitlesForMatch(termTitle, titles).filter(
           (t) => t !== selfTitle,
         )
         if (!candidates.length) continue
+        taken.push({ from, to })
         hits.push({
           from,
           to,
           title: termTitle,
           candidates,
+          asConfirmed: titleSet.has(termTitle) && m[0] === termTitle,
         })
       }
     }
+
+    // 2) 前缀灰线（如 鲁迪 → 鲁迪乌斯）
+    for (const prefix of prefixStrings) {
+      let from = 0
+      while (from <= text.length) {
+        const idx = text.indexOf(prefix, from)
+        if (idx < 0) break
+        const to = idx + prefix.length
+        from = idx + 1
+        if (overlaps(idx, to)) continue
+        const candidates = longerTitlesWithPrefixForDesc(
+          prefix,
+          titles,
+          selfTitle,
+        )
+        if (!candidates.length) continue
+        taken.push({ from: idx, to })
+        hits.push({
+          from: idx,
+          to,
+          title: prefix,
+          candidates,
+          asConfirmed: false,
+        })
+      }
+    }
+
     if (!hits.length) continue
 
     hits.sort((a, b) => a.from - b.from)
@@ -154,9 +231,18 @@ function highlightCandidatesInElement(
         frag.appendChild(document.createTextNode(text.slice(cursor, hit.from)))
       }
       const span = document.createElement('span')
-      span.className = termDashClass('candidate')
-      span.setAttribute('data-term-title', hit.title)
-      span.setAttribute('data-term-candidates', hit.candidates.join('\u0001'))
+      if (hit.asConfirmed) {
+        span.className = TERM_REF_CLASS
+        span.setAttribute('data-term-title', hit.title)
+        span.setAttribute('data-extension', TERM_GLOSSARY_ID)
+      } else {
+        span.className = termDashClass('candidate')
+        span.setAttribute('data-term-title', hit.title)
+        span.setAttribute(
+          'data-term-candidates',
+          hit.candidates.join('\u0001'),
+        )
+      }
       span.textContent = text.slice(hit.from, hit.to)
       frag.appendChild(span)
       cursor = hit.to
@@ -169,7 +255,7 @@ function highlightCandidatesInElement(
 }
 
 /**
- * 弹窗描述：保护 term[] → Markdown 渲染 → 还原为已确认 span → 灰线候选。
+ * 弹窗 / 定义块描述：保护 term[] → Markdown 渲染 → 还原已确认 span → 整词/前缀候选高亮。
  */
 export function renderDescriptionHtml(
   description: string,

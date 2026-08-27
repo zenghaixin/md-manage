@@ -3,6 +3,7 @@
  * number 模式：1–9 直接选主项。
  * tab 模式：先按 Tab 进入选词，再用 1–9 / ↑↓ 选择（未激活时不抢编辑器输入）。
  */
+import { nextFloatZIndex } from '../draggable-float'
 import { KEY_PICKER_CLASS } from './constants'
 import { ensureKeyPickerStyles } from './styles'
 
@@ -325,6 +326,9 @@ export class KeyPicker {
     if (foot.childNodes.length) {
       el.appendChild(foot)
     }
+
+    // 与 DraggableFloat 共用计数，避免浮层（词条预览等）盖住确认气泡
+    el.style.zIndex = String(nextFloatZIndex())
 
     document.body.appendChild(el)
     this.el = el
