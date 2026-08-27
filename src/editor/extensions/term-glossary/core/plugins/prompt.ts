@@ -8,6 +8,7 @@ import { useGlossaryStore } from '../../../../../stores/glossary'
 import { TERM_GLOSSARY_ID } from '../shared/constants'
 import { buildShortIgnoreContext } from '../match/match'
 import { replaceRangeWithTermRef } from '../match/convert'
+import { titlesContainedInText } from '../model/syntax'
 import {
   KeyPicker,
   type KeyPickerAnchor,
@@ -16,6 +17,14 @@ import {
 
 export type FormerPickerAction = 'switch' | 'once' | 'never'
 
+/** 灰线候选点击时用于「不是词条」的文档区间 */
+export type CandidateConfirmRange = {
+  view: EditorView
+  from: number
+  to: number
+  matchTitle: string
+}
+
 export interface PromptRuntime {
   showCandidateConfirm: (
     anchor: KeyPickerAnchor,
@@ -23,6 +32,7 @@ export interface PromptRuntime {
     onPick: (title: string) => void,
     promptKey?: string,
     onDismiss?: () => void,
+    range?: CandidateConfirmRange,
   ) => void
   showFormerConfirm: (
     anchor: KeyPickerAnchor,
@@ -66,25 +76,61 @@ export function createPromptRuntime(opts: {
     },
   ]
 
+  const refreshDecorations = (view: EditorView) => {
+    view.dispatch(view.state.tr.setMeta(pluginKey, { refresh: true }))
+  }
+
+  const handleCandidateNotTerm = async (range: CandidateConfirmRange) => {
+    const { view, from, to, matchTitle } = range
+    const ctx = buildShortIgnoreContext(
+      view.state.doc,
+      from,
+      to,
+      matchTitle,
+    )
+    if (!ctx) return
+    const store = useGlossaryStore()
+    const allTitles = Object.keys(store.terms)
+    const hitTitles = titlesContainedInText(ctx, allTitles)
+    if (!hitTitles.length) return
+    await store.addIgnoreContext(ctx, hitTitles)
+    refreshDecorations(view)
+  }
+
   const showCandidateConfirm: PromptRuntime['showCandidateConfirm'] = (
     anchor,
     titles,
     onPick,
     promptKey = '',
     onDismiss,
+    range,
   ) => {
+    const secondary: KeyPickerSecondary[] = range
+      ? [
+          {
+            key: 'n',
+            label: '不是词条',
+            onSelect: () => {
+              void handleCandidateNotTerm(range)
+            },
+          },
+        ]
+      : []
     picker.show({
       anchor,
       titles,
       onPick,
       promptKey,
       onDismiss,
+      secondary: secondary.length ? secondary : undefined,
       sourceId: TERM_GLOSSARY_ID,
       selectMode: 'tab',
       passive: true,
+      // 可见操作只保留「不是词条」；确认点标题，Esc/Tab 仍可键盘使用
+      showTabHint: false,
+      showEsc: false,
     })
   }
-
   const showFormerConfirm: PromptRuntime['showFormerConfirm'] = (
     anchor,
     formerTitle,
@@ -103,10 +149,6 @@ export function createPromptRuntime(opts: {
       onDismiss,
       sourceId: TERM_GLOSSARY_ID,
     })
-  }
-
-  const refreshDecorations = (view: EditorView) => {
-    view.dispatch(view.state.tr.setMeta(pluginKey, { refresh: true }))
   }
 
   const handleFormerAction: PromptRuntime['handleFormerAction'] = async (

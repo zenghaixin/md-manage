@@ -7,7 +7,7 @@ alwaysApply: true
 
 在本仓库完成一轮**有代码/配置改动**的任务后（即将回复用户前），必须生成可直接复制的提交说明文件。
 
-若本轮还有**用户可见能力变化**，须同时按 `.cursor/rules/changelog-update.mdc` 更新 `CHANGELOG.md`（先 CHANGELOG，再写本草稿；建议提交说明可带「更新 CHANGELOG」）。
+若本轮还有**用户可见能力变化**，须同时按 `.cursor/rules/changelog-update.mdc` 更新 `CHANGELOG.md`（先 CHANGELOG，再写本草稿）。
 
 ## 何时执行
 
@@ -20,14 +20,31 @@ alwaysApply: true
   - 打日志、改注释、改配置开关等琐碎调整
 - 用户明确要求「写提交草稿 / 提炼 commit」→ **即使小改也写**
 
-## 怎么做
+## 范围：相对上次提交的全部未提交改动
+
+**禁止**只写「本轮对话刚做完」的那一个功能并覆盖旧草稿。
+
+每次更新 `.cursor/commit-draft.md` 时，必须以 **当前工作区相对 `HEAD`（上次 git 提交）的全部未提交改动** 为范围：
 
 1. 在仓库根目录执行（PowerShell 用 `;` 分隔）：
    - `git status`
    - `git diff --stat HEAD`
-   - `git log -5 --oneline`（对齐近期文风）
-2. **覆盖写入** `.cursor/commit-draft.md`（路径固定，不要每次新建时间戳文件）
-3. 回复用户时用一两句话提到：提交草稿已写入 `.cursor/commit-draft.md`
+   - `git status --short`
+   - `git log -1 --oneline`
+   - `git branch --show-current`
+2. **覆盖写入** `.cursor/commit-draft.md`
+3. 草稿须覆盖上述范围内**所有功能点**，不得遗漏仍待提交的改动
+4. 回复用户时用一两句话提到：提交草稿已写入 `.cursor/commit-draft.md`
+
+### 与 CHANGELOG 的分工
+
+| 文档 | 写什么 |
+|------|--------|
+| **CHANGELOG.md** | 用户可见能力的**详细说明**（加粗标签、交互细节、边界行为） |
+| **commit-draft** | **功能级摘要**（做了什么能力/修复，一条一句）；不写 API 路径、字段名、组件名、实现细节 |
+
+- 一次提交可对应 CHANGELOG 中多个版本节
+- commit-draft 对齐「距 `HEAD` 尚未提交的全部 diff」，但表述保持简短
 
 ## 文件格式（必须）
 
@@ -42,46 +59,51 @@ alwaysApply: true
 
 ## 汇总标题
 
-（单行，复制到 GitHub Desktop 的 **Summary**，或 `git commit -m`）
-
 \`\`\`
-<一句概括本轮主线的标题，约 20～50 字>
+<一句概括全部待提交功能，约 20～50 字>
 \`\`\`
 
 ## 建议提交说明
 
-（复制到 GitHub Desktop 的 **Description**，或 `git commit` 正文）
-
 \`\`\`
-1、<改动要点一>
-2、<改动要点二>
-3、<改动要点三>
+1、<功能或修复，一句话>
+2、<功能或修复，一句话>
+…
 \`\`\`
-
-## 改动摘要
-
-1、<要点 1>
-2、<要点 2>
 
 ## 文件一览
 
 \`\`\`
-<粘贴 git diff --stat 或精简后的路径列表>
+<粘贴 git status --short>
 \`\`\`
 ```
 
-### 汇总标题怎么写
+### 汇总标题
 
-- **必填**：每份草稿都要有「汇总标题」，单独一节，便于一眼复制。
-- **一行**：不用 `1、` 编号；不用句号结尾；避免换行。
-- **概括主线**：写「这轮最主要做了什么」，不要堆文件名；多主题用顿号或「与」连接。
-- **长度**：约 20～50 字；GitHub Desktop Summary 有长度限制，过长会被截断。
-- **与正文分工**：标题 = 总览；「建议提交说明」= 分条细节（可 3～6 条）。
+- **必填**；一行；不用 `1、` 编号；不用句号结尾
+- 概括**全部**待提交主线，不只写最后一次对话的功能
 
-示例：
+### 建议提交说明
+
+- **只写功能**：使用者或维护者能看懂「多了什么 / 修了什么」
+- **不写**：API 路径、JSON 字段、类名/文件名、watch/sync 等实现细节（这些放 CHANGELOG）
+- **条数**：通常 3～8 条；多条同类可合并
+- 若已更新 CHANGELOG，最后一条可写「更新 CHANGELOG」
+
+示例（✓ 合适）：
 
 \`\`\`
-词条系统重构：浮层/备注修复与 draggable-float、key-picker 组件整理
+1、glossary 词条文件登记改为稳定 id，引用按来源文件关联
+2、编辑词条时可多选引用词条并切换来源文件
+3、编辑浮层与定义块布局调整
+4、更新 CHANGELOG
+\`\`\`
+
+示例（✗ 过细，应放 CHANGELOG）：
+
+\`\`\`
+1、新增 GET /api/glossary/index；refs 为 sourceId → 标题[]
+2、TermRefSourcePicker 解析 ::: term；修复 reload index 触发 watch…
 \`\`\`
 
 ## 注意
@@ -89,5 +111,4 @@ alwaysApply: true
 - **只写草稿，不要自动 `git commit` / `git push`**（除非用户明确要求提交）
 - 草稿文件已在 `.gitignore`，勿强制加入版本库
 - **GitHub Desktop**：`汇总标题` → Summary；`建议提交说明` → Description
-- **命令行**：`git commit -m "汇总标题" -m "建议提交说明全文"`，或仅 `-m` 标题、正文另附
-- 「建议提交说明」风格对齐近几次 `git log`（`1、… 2、…`）
+- **用户提交后**：新的 `HEAD` 成为基准，只列新的未提交改动

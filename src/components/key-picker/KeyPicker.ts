@@ -46,6 +46,10 @@ export type KeyPickerShowOptions = {
   selectMode?: KeyPickerSelectMode
   /** tab 模式下未激活时不抢焦点，仅 Tab / Esc 由气泡处理 */
   passive?: boolean
+  /** 是否显示「Tab 进入选词」提示；默认 true（仅 tab+passive 时有效） */
+  showTabHint?: boolean
+  /** 是否在底部渲染 Esc 取消按钮；默认 true（键盘 Esc 始终可用） */
+  showEsc?: boolean
   /** 可选标记来源扩展，便于调试 */
   sourceId?: string
 }
@@ -263,10 +267,14 @@ export class KeyPicker {
     }
 
     const secondaryRuns = new Map<string, () => void>()
+    const showTabHint =
+      opts.showTabHint !== false && this.selectMode === 'tab' && this.passive
+    const showEsc = opts.showEsc !== false
+    const secondaryItems = opts.secondary || []
     const foot = document.createElement('div')
     foot.className = `${KEY_PICKER_CLASS}-foot`
 
-    if (this.selectMode === 'tab' && this.passive) {
+    if (showTabHint) {
       const hint = document.createElement('div')
       hint.className = `${KEY_PICKER_CLASS}-hint`
       hint.textContent = 'Tab 进入选词'
@@ -274,13 +282,14 @@ export class KeyPicker {
       foot.appendChild(hint)
     }
 
-    for (const item of opts.secondary || []) {
+    for (const item of secondaryItems) {
       const run = () => {
         this.hide()
         item.onSelect()
       }
       secondaryRuns.set(item.key, run)
       if (item.key === '-') secondaryRuns.set('_', run)
+      if (item.key.toLowerCase() === 'n') secondaryRuns.set('N', run)
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = `${KEY_PICKER_CLASS}-item is-muted`
@@ -296,21 +305,26 @@ export class KeyPicker {
       foot.appendChild(btn)
     }
 
-    const escLabel = String(opts.esc?.label ?? '取消').trim() || '取消'
-    const cancelBtn = document.createElement('button')
-    cancelBtn.type = 'button'
-    cancelBtn.className = `${KEY_PICKER_CLASS}-item is-muted`
-    cancelBtn.innerHTML = `<span class="${KEY_PICKER_CLASS}-hotkey">Esc:</span><span>${escapeHtml(escLabel)}</span>`
-    cancelBtn.addEventListener('mousedown', (e) => {
-      e.preventDefault()
-    })
-    cancelBtn.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      runEsc()
-    })
-    foot.appendChild(cancelBtn)
-    el.appendChild(foot)
+    if (showEsc) {
+      const escLabel = String(opts.esc?.label ?? '取消').trim() || '取消'
+      const cancelBtn = document.createElement('button')
+      cancelBtn.type = 'button'
+      cancelBtn.className = `${KEY_PICKER_CLASS}-item is-muted`
+      cancelBtn.innerHTML = `<span class="${KEY_PICKER_CLASS}-hotkey">Esc:</span><span>${escapeHtml(escLabel)}</span>`
+      cancelBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+      })
+      cancelBtn.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        runEsc()
+      })
+      foot.appendChild(cancelBtn)
+    }
+
+    if (foot.childNodes.length) {
+      el.appendChild(foot)
+    }
 
     document.body.appendChild(el)
     this.el = el
@@ -356,6 +370,14 @@ export class KeyPicker {
         e.preventDefault()
         e.stopPropagation()
         runEsc()
+        return
+      }
+
+      const secondary = secondaryRuns.get(e.key)
+      if (secondary) {
+        e.preventDefault()
+        e.stopPropagation()
+        secondary()
         return
       }
 
@@ -405,13 +427,6 @@ export class KeyPicker {
         return
       }
 
-      const secondary = secondaryRuns.get(e.key)
-      if (secondary) {
-        e.preventDefault()
-        e.stopPropagation()
-        secondary()
-        return
-      }
       if (e.key >= '1' && e.key <= '9') {
         const i = Number(e.key) - 1
         if (i >= 0 && i < pickRuns.length) {

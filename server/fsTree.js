@@ -20,6 +20,7 @@ const META_TABS = '.tabs.json'
  *   readGlossary: () => Promise<any>
  *   writeGlossary: (data: any) => Promise<any>
  *   onGlossaryTreeChanged?: () => Promise<void>
+ *   remapIndexPaths?: (remapFn: (path: string) => string | null | undefined) => Promise<void>
  * }} glossary
  */
 export function createFsTree(docsRoot, isSafeName, glossary) {
@@ -381,6 +382,7 @@ export function createFsTree(docsRoot, isSafeName, glossary) {
 
   async function remapGlossaryPaths(remapFn) {
     try {
+      await glossary.remapIndexPaths?.(remapFn)
       const data = await glossary.readGlossary()
       let changed = false
       const terms = { ...(data.terms || {}) }

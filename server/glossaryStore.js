@@ -1,10 +1,20 @@
 /**
  * 词条数据：落在 md/词条/.glossary/，按下标镜像 md 树。
- * - index.json：key → path
- * - {key}.json：{ list, terms }（terms 无 type/attrs，分类靠文件夹）
+ * - index.json v2：{ id, order, path, fileName }
+ * - {order}.json：{ list, terms }
  */
 import fs from 'fs/promises'
 import path from 'path'
+import {
+  GLOSSARY_INDEX_VERSION,
+  fileNameFromPath,
+  generateEntryId,
+  migrateTermRefs,
+  normalizeTermRefs,
+  normalizeRefSources,
+  readIndexPayload,
+  writeIndexPayload,
+} from './glossaryIndex.js'
 
 export const GLOSSARY_ROOT = '词条'
 export const GLOSSARY_META_DIR = '.glossary'
@@ -26,37 +36,56 @@ export function createGlossaryStore(docsRoot, deps) {
     return deps.normRel(p)
   }
 
-  function entryAbs(key) {
-    return path.join(metaAbs, `${key}.json`)
+  function entryAbs(order) {
+    return path.join(metaAbs, `${order}.json`)
   }
 
   async function ensureMetaDir() {
     await fs.mkdir(metaAbs, { recursive: true })
   }
 
+  function buildIndexLookup(entries) {
+    const idByPath = new Map()
+    const pathById = new Map()
+    for (const e of entries || []) {
+      idByPath.set(e.path, e.id)
+      pathById.set(e.id, e.path)
+    }
+    return { idByPath, pathById }
+  }
+
+  function normalizeTermRecord(raw, sourcePath, ctx) {
+    const term = raw && typeof raw === 'object' ? raw : {}
+    const { refs, refSources } = migrateTermRefs(term, ctx)
+    return {
+      title: String(term?.title ?? '').trim(),
+      sourcePath: sourcePath || String(term?.sourcePath ?? ''),
+      description: String(term?.description ?? '').trim(),
+      ignoreContexts: Array.isArray(term?.ignoreContexts)
+        ? term.ignoreContexts
+        : [],
+      formerTitles: Array.isArray(term?.formerTitles) ? term.formerTitles : [],
+      pendingManualConfirm: Array.isArray(term?.pendingManualConfirm)
+        ? term.pendingManualConfirm
+        : [],
+      refs,
+      refSources,
+    }
+  }
+
   function emptyEntry() {
     return { list: [], terms: {} }
   }
 
-  function normalizeEntry(raw, sourcePath = '') {
+  function normalizeEntry(raw, sourcePath = '', ctx = {}) {
     const data = raw && typeof raw === 'object' ? raw : {}
     const termsIn = data.terms && typeof data.terms === 'object' ? data.terms : {}
     const terms = {}
     for (const [k, term] of Object.entries(termsIn)) {
       const title = String(term?.title ?? k).trim()
       if (!title) continue
-      terms[title] = {
-        title,
-        sourcePath: sourcePath || String(term?.sourcePath ?? ''),
-        description: String(term?.description ?? '').trim(),
-        ignoreContexts: Array.isArray(term?.ignoreContexts)
-          ? term.ignoreContexts
-          : [],
-        formerTitles: Array.isArray(term?.formerTitles) ? term.formerTitles : [],
-        pendingManualConfirm: Array.isArray(term?.pendingManualConfirm)
-          ? term.pendingManualConfirm
-          : [],
-      }
+      const normalized = normalizeTermRecord(term, sourcePath, ctx)
+      terms[title] = { ...normalized, title }
     }
     let list = Array.isArray(data.list)
       ? data.list.map((t) => String(t ?? '').trim()).filter(Boolean)
@@ -78,49 +107,40 @@ export function createGlossaryStore(docsRoot, deps) {
   async function readIndex() {
     try {
       const raw = await fs.readFile(indexAbs, 'utf-8')
-      const data = JSON.parse(raw || '{}')
-      const entries = Array.isArray(data.entries) ? data.entries : []
-      return {
-        version: 1,
-        entries: entries
-          .map((e) => ({
-            key: String(e?.key || '').trim(),
-            path: norm(e?.path || ''),
-          }))
-          .filter((e) => e.key && e.path),
+      const parsed = JSON.parse(raw || '{}')
+      const payload = readIndexPayload(parsed, norm)
+      if (Number(parsed.version) < GLOSSARY_INDEX_VERSION) {
+        await writeIndex(payload)
       }
+      return payload
     } catch (err) {
-      if (err.code === 'ENOENT') return { version: 1, entries: [] }
+      if (err.code === 'ENOENT') {
+        return { version: GLOSSARY_INDEX_VERSION, entries: [] }
+      }
       throw err
     }
   }
 
   async function writeIndex(index) {
     await ensureMetaDir()
-    const payload = {
-      version: 1,
-      entries: (index.entries || []).map((e) => ({
-        key: e.key,
-        path: norm(e.path),
-      })),
-    }
+    const payload = writeIndexPayload(index, norm)
     await fs.writeFile(indexAbs, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8')
     return payload
   }
 
-  async function readEntryFile(key) {
+  async function readEntryFile(order) {
     try {
-      const raw = await fs.readFile(entryAbs(key), 'utf-8')
-      return normalizeEntry(JSON.parse(raw || '{}'))
+      const raw = await fs.readFile(entryAbs(order), 'utf-8')
+      return JSON.parse(raw || '{}')
     } catch (err) {
       if (err.code === 'ENOENT') return emptyEntry()
       throw err
     }
   }
 
-  async function writeEntryFile(key, fileData, sourcePath) {
+  async function writeEntryFile(order, fileData, sourcePath, ctx = {}) {
     await ensureMetaDir()
-    const normalized = normalizeEntry(fileData, sourcePath)
+    const normalized = normalizeEntry(fileData, sourcePath, ctx)
     for (const term of Object.values(normalized.terms)) {
       term.sourcePath = sourcePath
     }
@@ -128,30 +148,47 @@ export function createGlossaryStore(docsRoot, deps) {
       a.localeCompare(b, 'zh'),
     )
     await fs.writeFile(
-      entryAbs(key),
+      entryAbs(order),
       `${JSON.stringify(normalized, null, 2)}\n`,
       'utf-8',
     )
     return normalized
   }
 
-  /** 按下标重建 index，并按 path 把旧 json 迁到新 key */
+  /** 按下标重建 index，按 id 迁移 {order}.json 内容 */
   async function rebuildIndex() {
     await ensureMetaDir()
     const prev = await readIndex()
-    const pathToOldKey = new Map(prev.entries.map((e) => [e.path, e.key]))
+    const prevByPath = new Map(prev.entries.map((e) => [e.path, e]))
+
     /** @type {Map<string, object>} */
-    const contentByPath = new Map()
+    const contentById = new Map()
     for (const e of prev.entries) {
-      contentByPath.set(e.path, await readEntryFile(e.key))
+      contentById.set(e.id, await readEntryFile(e.order))
     }
 
-    const nextEntries = await deps.listGlossaryMdEntries()
-    const usedKeys = new Set(nextEntries.map((e) => e.key))
+    const nextOrders = await deps.listGlossaryMdEntries()
+    const usedOrders = new Set(nextOrders.map((e) => e.key))
 
-    for (const e of nextEntries) {
-      const payload = contentByPath.get(e.path) || emptyEntry()
-      await writeEntryFile(e.key, payload, e.path)
+    /** @type {Array<{ id: string, order: string, path: string, fileName: string }>} */
+    const nextEntries = []
+
+    for (const item of nextOrders) {
+      const order = String(item.key || '').trim()
+      const sourcePath = norm(item.path || '')
+      if (!order || !sourcePath) continue
+
+      const prevMeta = prevByPath.get(sourcePath)
+      const id = prevMeta?.id || generateEntryId()
+      const fileName =
+        String(prevMeta?.fileName || '').trim() || fileNameFromPath(sourcePath)
+      const payload = contentById.get(id) || emptyEntry()
+      const lookup = buildIndexLookup([
+        ...prev.entries,
+        { id, order, path: sourcePath, fileName },
+      ])
+      await writeEntryFile(order, payload, sourcePath, lookup)
+      nextEntries.push({ id, order, path: sourcePath, fileName })
     }
 
     let diskFiles = []
@@ -162,8 +199,8 @@ export function createGlossaryStore(docsRoot, deps) {
     }
     for (const name of diskFiles) {
       if (name === 'index.json' || !name.endsWith('.json')) continue
-      const key = name.replace(/\.json$/i, '')
-      if (!usedKeys.has(key)) {
+      const order = name.replace(/\.json$/i, '')
+      if (!usedOrders.has(order)) {
         try {
           await fs.unlink(path.join(metaAbs, name))
         } catch {
@@ -172,26 +209,58 @@ export function createGlossaryStore(docsRoot, deps) {
       }
     }
 
-    // 清理旧 key 残留（path 已变但内容已迁走）
-    void pathToOldKey
+    return writeIndex({ version: GLOSSARY_INDEX_VERSION, entries: nextEntries })
+  }
 
-    return writeIndex({ version: 1, entries: nextEntries })
+  async function readGlossaryIndex() {
+    return rebuildIndex()
+  }
+
+  /**
+   * 文件/文件夹重命名或移动时更新 index 中的 path（id 不变）。
+   * @param {(path: string) => string | null | undefined} remapFn
+   */
+  async function remapIndexPaths(remapFn) {
+    const index = await readIndex()
+    let changed = false
+    const entries = []
+    for (const e of index.entries) {
+      const nextPath = remapFn(e.path)
+      if (nextPath === '') {
+        changed = true
+        continue
+      }
+      if (nextPath != null && nextPath !== e.path) {
+        changed = true
+        entries.push({
+          ...e,
+          path: norm(nextPath),
+          fileName: fileNameFromPath(nextPath),
+        })
+        continue
+      }
+      entries.push(e)
+    }
+    if (changed) await writeIndex({ version: GLOSSARY_INDEX_VERSION, entries })
   }
 
   async function listEntryPaths() {
     const index = await rebuildIndex()
     return index.entries.map((e) => ({
-      key: e.key,
+      id: e.id,
+      order: e.order,
       path: e.path,
-      label: e.path.split('/').pop()?.replace(/\.md$/i, '') || e.path,
+      fileName: e.fileName,
+      label: e.fileName || e.path.split('/').pop()?.replace(/\.md$/i, '') || e.path,
     }))
   }
 
   async function readGlossaryFile() {
     const index = await rebuildIndex()
+    const lookup = buildIndexLookup(index.entries)
     const terms = {}
     for (const e of index.entries) {
-      const file = await readEntryFile(e.key)
+      const file = normalizeEntry(await readEntryFile(e.order), e.path, lookup)
       for (const [title, term] of Object.entries(file.terms)) {
         terms[title] = {
           title,
@@ -206,18 +275,21 @@ export function createGlossaryStore(docsRoot, deps) {
           pendingManualConfirm: Array.isArray(term?.pendingManualConfirm)
             ? term.pendingManualConfirm
             : [],
+          refs: normalizeTermRefs(term?.refs, term?.refSources || []),
+          refSources: normalizeRefSources(term?.refSources, lookup),
         }
       }
     }
-    return { lastUpdated: '', terms }
+    return { lastUpdated: '', terms, index }
   }
 
   async function writeGlossaryFile(data) {
     const terms =
       data.terms && typeof data.terms === 'object' ? data.terms : {}
     await ensureDefaultMd()
-    let index = await rebuildIndex()
-    let keyByPath = new Map(index.entries.map((e) => [e.path, e.key]))
+    const index = await rebuildIndex()
+    const orderByPath = new Map(index.entries.map((e) => [e.path, e.order]))
+    const lookup = buildIndexLookup(index.entries)
 
     /** @type {Map<string, { list: string[], terms: Record<string, object> }>} */
     const byPath = new Map()
@@ -236,6 +308,7 @@ export function createGlossaryStore(docsRoot, deps) {
         sourcePath = GLOSSARY_DEFAULT_FILE
         if (!byPath.has(sourcePath)) byPath.set(sourcePath, emptyEntry())
       }
+      const refSources = normalizeRefSources(term?.refSources, lookup)
       const bucket = byPath.get(sourcePath)
       bucket.terms[title] = {
         title,
@@ -248,26 +321,31 @@ export function createGlossaryStore(docsRoot, deps) {
         pendingManualConfirm: Array.isArray(term?.pendingManualConfirm)
           ? term.pendingManualConfirm
           : [],
+        refs: normalizeTermRefs(term?.refs, refSources),
+        refSources,
       }
     }
 
-    if (!keyByPath.has(GLOSSARY_DEFAULT_FILE)) {
-      index = await rebuildIndex()
-      keyByPath = new Map(index.entries.map((e) => [e.path, e.key]))
+    if (!orderByPath.has(GLOSSARY_DEFAULT_FILE)) {
+      await rebuildIndex()
     }
+
+    const latestIndex = await readIndex()
+    const latestOrderByPath = new Map(latestIndex.entries.map((e) => [e.path, e.order]))
+    const latestLookup = buildIndexLookup(latestIndex.entries)
 
     const lastUpdated = new Date().toISOString()
     for (const [sourcePath, bucket] of byPath) {
-      const key = keyByPath.get(sourcePath)
-      if (!key) continue
+      const order = latestOrderByPath.get(sourcePath)
+      if (!order) continue
       bucket.list = Object.keys(bucket.terms).sort((a, b) =>
         a.localeCompare(b, 'zh'),
       )
-      await writeEntryFile(key, bucket, sourcePath)
+      await writeEntryFile(order, bucket, sourcePath, latestLookup)
     }
 
     const merged = await readGlossaryFile()
-    return { lastUpdated, terms: merged.terms }
+    return { lastUpdated, terms: merged.terms, index: merged.index }
   }
 
   async function ensureDefaultMd() {
@@ -295,6 +373,8 @@ export function createGlossaryStore(docsRoot, deps) {
   return {
     metaAbs,
     rebuildIndex,
+    readGlossaryIndex,
+    remapIndexPaths,
     listEntryPaths,
     readGlossaryFile,
     writeGlossaryFile,
@@ -302,5 +382,8 @@ export function createGlossaryStore(docsRoot, deps) {
     wipeLegacyDataDir,
     GLOSSARY_DEFAULT_FILE,
     GLOSSARY_ROOT,
+    normalizeTermRefs,
+    normalizeRefSources,
+    buildIndexLookup,
   }
 }

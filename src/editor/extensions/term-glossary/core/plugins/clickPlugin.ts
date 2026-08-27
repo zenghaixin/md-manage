@@ -112,14 +112,21 @@ function handleDashClick(
     const range = rangeFromEl(view, candidate)
     if (!range) return true
     const { from, to } = range
-    runtime.showCandidateConfirm(candidate, candidates, (title) => {
-      const tr = view.state.tr
-      if (!replaceRangeWithTermRef(tr, view.state.schema, from, to, title)) {
-        return
-      }
-      tr.setMeta(convertPluginKey, { skip: true })
-      view.dispatch(tr)
-    })
+    runtime.showCandidateConfirm(
+      candidate,
+      candidates,
+      (title) => {
+        const tr = view.state.tr
+        if (!replaceRangeWithTermRef(tr, view.state.schema, from, to, title)) {
+          return
+        }
+        tr.setMeta(convertPluginKey, { skip: true })
+        view.dispatch(tr)
+      },
+      undefined,
+      undefined,
+      { view, from, to, matchTitle },
+    )
     return true
   }
 

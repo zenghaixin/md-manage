@@ -82,13 +82,28 @@ function onEdit(event) {
   const pos = props.getPos()
   if (typeof pos !== 'number') return
   props.editor.chain().focus().setNodeSelection(pos).run()
-  const el = termRootEl()
-  const r = el?.getBoundingClientRect?.()
+  const root = termRootEl()
+  const containerR = root?.getBoundingClientRect?.()
+  const btn = event.currentTarget
+  const btnR = btn?.getBoundingClientRect?.()
   openTermEditorEdit({
     editor: props.editor,
     nodePos: pos,
-    besideRect: r
-      ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+    besideRect: btnR
+      ? {
+          left: btnR.left,
+          right: btnR.right,
+          top: btnR.top,
+          bottom: btnR.bottom,
+        }
+      : null,
+    containerRect: containerR
+      ? {
+          left: containerR.left,
+          right: containerR.right,
+          top: containerR.top,
+          bottom: containerR.bottom,
+        }
       : null,
   })
 }
@@ -200,43 +215,42 @@ onUnmounted(() => {
     :data-term-title="node.attrs.title"
     @click="selectWholeTerm"
   >
-    <div
-      v-show="selected"
-      class="ext-term-actions"
-      contenteditable="false"
-    >
-      <button
-        type="button"
-        class="ext-term-action-btn"
-        :class="{ 'is-active': hasRemark }"
-        title="备注"
-        aria-label="备注"
-        @click="onRemark"
-      >
-        <AppIcon name="remark" :size="14" />
-      </button>
-      <button
-        type="button"
-        class="ext-term-action-btn"
-        title="编辑"
-        aria-label="编辑"
-        @click="onEdit"
-      >
-        <AppIcon name="edit" :size="14" />
-      </button>
-      <button
-        type="button"
-        class="ext-term-action-btn is-danger"
-        title="删除"
-        aria-label="删除"
-        @click="onDelete"
-      >
-        <AppIcon name="trash" :size="14" />
-      </button>
-    </div>
-
     <div class="ext-term-title-row">
       <div class="ext-term-title">{{ titleText }}</div>
+      <div
+        v-show="selected"
+        class="ext-term-actions"
+        contenteditable="false"
+      >
+        <button
+          type="button"
+          class="ext-term-action-btn"
+          :class="{ 'is-active': hasRemark }"
+          title="备注"
+          aria-label="备注"
+          @click="onRemark"
+        >
+          <AppIcon name="remark" :size="14" />
+        </button>
+        <button
+          type="button"
+          class="ext-term-action-btn"
+          title="编辑"
+          aria-label="编辑"
+          @click="onEdit"
+        >
+          <AppIcon name="edit" :size="14" />
+        </button>
+        <button
+          type="button"
+          class="ext-term-action-btn is-danger"
+          title="删除"
+          aria-label="删除"
+          @click="onDelete"
+        >
+          <AppIcon name="trash" :size="14" />
+        </button>
+      </div>
     </div>
 
     <NodeViewContent

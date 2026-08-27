@@ -16,6 +16,9 @@ const props = defineProps({
   initialTitle: { type: String, default: '' },
   initialDescription: { type: String, default: '' },
   initialTargetPath: { type: String, default: '' },
+  initialSourcePath: { type: String, default: '' },
+  initialRefs: { type: Object, default: () => ({}) },
+  initialRefSources: { type: Object, default: () => ({}) },
   remarkId: { type: String, default: '' },
   floatLeft: { type: Number, default: null },
   floatTop: { type: Number, default: null },
@@ -122,8 +125,8 @@ defineExpose({
   <DraggableFloat
     ref="floatRef"
     :title="floatTitle"
-    :width="380"
-    :height="560"
+    :width="520"
+    :height="620"
     :left="floatLeft"
     :top="floatTop"
     :z-index="zIndex"
@@ -138,6 +141,9 @@ defineExpose({
       :initial-title="initialTitle"
       :initial-description="initialDescription"
       :initial-target-path="initialTargetPath"
+      :initial-source-path="initialSourcePath"
+      :initial-refs="initialRefs"
+      :initial-ref-sources="initialRefSources"
       :show-heading="false"
       :show-actions="false"
       :show-desc-toggle="false"

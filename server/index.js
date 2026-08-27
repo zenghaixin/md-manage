@@ -5,6 +5,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { createFsTree } from './fsTree.js'
 import { createGlossaryStore } from './glossaryStore.js'
+import { normalizeRefSources, normalizeTermRefs } from './glossaryIndex.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DOCS_ROOT = path.resolve(__dirname, '../md')
@@ -85,6 +86,7 @@ const fsTree = createFsTree(DOCS_ROOT, isSafeName, {
   readGlossary: () => glossaryStore.readGlossaryFile(),
   writeGlossary: (data) => glossaryStore.writeGlossaryFile(data),
   onGlossaryTreeChanged: () => glossaryStore.rebuildIndex(),
+  remapIndexPaths: (fn) => glossaryStore.remapIndexPaths(fn),
 })
 
 glossaryStore = createGlossaryStore(DOCS_ROOT, {
@@ -557,6 +559,23 @@ function normalizeFormerTitles(value) {
   return out
 }
 
+function glossaryLookupFrom(data) {
+  return glossaryStore.buildIndexLookup(data?.index?.entries || [])
+}
+
+function normalizeTermRefsForLookup(refs, refSources, lookup) {
+  const ctx =
+    lookup?.idByPath instanceof Map ? lookup : glossaryLookupFrom(lookup)
+  const ids = normalizeRefSources(refSources, ctx)
+  return normalizeTermRefs(refs, ids)
+}
+
+function normalizeRefSourcesForLookup(refSources, lookup) {
+  const ctx =
+    lookup?.idByPath instanceof Map ? lookup : glossaryLookupFrom(lookup)
+  return normalizeRefSources(refSources, ctx)
+}
+
 /**
  * 旧版 boolean → []；数组则规范化为冲突项列表。
  */
@@ -604,6 +623,11 @@ function scrubIgnoreContexts(terms) {
       pendingManualConfirm: normalizePendingManualConfirm(
         term?.pendingManualConfirm,
       ),
+      refs: normalizeTermRefs(
+        term?.refs,
+        normalizeRefSources(term?.refSources),
+      ),
+      refSources: normalizeRefSources(term?.refSources),
     }
   }
   return next
@@ -612,7 +636,7 @@ function scrubIgnoreContexts(terms) {
 /**
  * 扫描「词条/」下 Markdown 的 ::: term 定义，得到 title → term。
  * 引用（term[标题]）仍由改名同步等全库扫描；此处只收录定义。
- * 保留已有 ignoreContexts / formerTitles。
+ * 保留已有 ignoreContexts / formerTitles / refs / refSources。
  */
 async function scanMarkdownTerms(existingTerms = {}) {
   /** @type {Record<string, object>} */
@@ -643,6 +667,11 @@ async function scanMarkdownTerms(existingTerms = {}) {
         pendingManualConfirm: normalizePendingManualConfirm(
           prev?.pendingManualConfirm,
         ),
+        refs: normalizeTermRefs(
+          prev?.refs,
+          normalizeRefSources(prev?.refSources),
+        ),
+        refSources: normalizeRefSources(prev?.refSources),
       }
     }
   }
@@ -673,6 +702,60 @@ app.get('/api/glossary/entries', async (_req, res) => {
   }
 })
 
+/** 词条入口 index（id / order / path / fileName） */
+app.get('/api/glossary/index', async (_req, res) => {
+  try {
+    await fsTree.ensureGlossarySystem()
+    res.json(await glossaryStore.readGlossaryIndex())
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/** 指定词条入口 md 下的定义块标题列表（引用槽位下拉） */
+app.get('/api/glossary/file-terms', async (req, res) => {
+  try {
+    const sourcePath = fsTree.normRel(String(req.query?.path ?? ''))
+    if (!sourcePath || !sourcePath.endsWith('.md')) {
+      return res.status(400).json({ error: 'path 格式错误' })
+    }
+    if (!fsTree.isGlossaryDefPath(sourcePath)) {
+      return res.json({ titles: [] })
+    }
+
+    const seen = new Set()
+    const titles = []
+
+    try {
+      const { content } = await fsTree.readFileContent(sourcePath)
+      TERM_BLOCK_RE.lastIndex = 0
+      let match
+      while ((match = TERM_BLOCK_RE.exec(String(content ?? ''))) !== null) {
+        const title = String(match[1] ?? '').trim()
+        if (!title || seen.has(title)) continue
+        seen.add(title)
+        titles.push(title)
+      }
+    } catch (err) {
+      if (err.status !== 404) throw err
+    }
+
+    const glossary = await readGlossaryFile()
+    for (const term of Object.values(glossary.terms || {})) {
+      const title = String(term?.title ?? '').trim()
+      if (!title || seen.has(title)) continue
+      if (fsTree.normRel(term?.sourcePath || '') !== sourcePath) continue
+      seen.add(title)
+      titles.push(title)
+    }
+
+    titles.sort((a, b) => a.localeCompare(b, 'zh'))
+    res.json({ titles })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 /** 整表写回 glossary */
 app.put('/api/glossary', async (req, res) => {
   try {
@@ -693,6 +776,11 @@ app.put('/api/glossary', async (req, res) => {
         pendingManualConfirm: normalizePendingManualConfirm(
           term?.pendingManualConfirm,
         ),
+        refs: normalizeTermRefs(
+          term?.refs,
+          normalizeRefSources(term?.refSources),
+        ),
+        refSources: normalizeRefSources(term?.refSources),
       }
     }
     res.json(await writeGlossaryFile({ terms: normalized }))
@@ -736,18 +824,22 @@ app.patch('/api/glossary/file', async (req, res) => {
     }
 
     const data = await readGlossaryFile()
+    const lookup = glossaryLookupFrom(data)
     const nextTerms = { ...data.terms }
-    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[] }>} */
+    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[], refs: Record<string, string[]>, refSources: string[] }>} */
     const preserved = {}
 
     for (const [key, term] of Object.entries(nextTerms)) {
       if (term?.sourcePath === sourcePath) {
+        const refSources = normalizeRefSourcesForLookup(term.refSources, lookup)
         preserved[key] = {
           ignoreContexts: normalizeIgnoreContexts(term.ignoreContexts),
           formerTitles: normalizeFormerTitles(term.formerTitles),
           pendingManualConfirm: normalizePendingManualConfirm(
             term.pendingManualConfirm,
           ),
+          refs: normalizeTermRefsForLookup(term.refs, refSources, lookup),
+          refSources,
         }
         delete nextTerms[key]
       }
@@ -778,6 +870,10 @@ app.patch('/api/glossary/file', async (req, res) => {
           : []),
         ...(fromOld?.formerTitles || []),
       ]).filter((f) => f !== title)
+      const refSources = normalizeRefSourcesForLookup(
+        fromPrev?.refSources || fromData?.refSources || fromOld?.refSources,
+        lookup,
+      )
       nextTerms[title] = {
         title,
         description: String(item?.description ?? '').trim(),
@@ -795,6 +891,12 @@ app.patch('/api/glossary/file', async (req, res) => {
           : normalizePendingManualConfirm(
               fromPrev?.pendingManualConfirm || fromData?.pendingManualConfirm,
             ),
+        refs: normalizeTermRefsForLookup(
+          fromPrev?.refs || fromData?.refs || fromOld?.refs,
+          refSources,
+          lookup,
+        ),
+        refSources,
       }
     }
 

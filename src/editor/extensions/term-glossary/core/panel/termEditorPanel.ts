@@ -29,6 +29,7 @@ import { replaceRangeWithTermRef } from '../match/convert'
 import { commitTermRename } from '../rename/renameFlow'
 import { TERM_NODE_NAME } from '../shared/constants'
 import { GLOSSARY_DEFAULT_FILE, isGlossaryDefPath, normalizeDocPath } from '../shared/glossaryPaths'
+import { normalizeRefSources, normalizeTermRefs } from '../shared/termRefSlots'
 import {
   insertTermDefinition,
   repairTermRemarkLeak,
@@ -37,8 +38,8 @@ import {
 import { getActiveTermEditor } from '../shared/editorViewRef'
 import TermEditorFloatHost from './TermEditorFloatHost.vue'
 
-const EDITOR_W = 380
-const EDITOR_H = 560
+const EDITOR_W = 520
+const EDITOR_H = 620
 const CASCADE_ID = 'term-editor-float'
 
 type CreateSession = {
@@ -80,12 +81,18 @@ type ConfirmPayload = {
   description: string
   /** 新建时落盘存储位置；空则默认词条 */
   targetPath?: string
+  /** 引用槽位值（如人物.md 的武器） */
+  refs?: Record<string, string[]>
+  /** 各槽位选用的数据源 md */
+  refSources?: string[]
 }
 
 let session: Session | null = null
 let floatMount: FloatHostMount | null = null
 /** 从哪个弹窗打开：贴其右侧 */
 let openBeside: CascadeAnchor | null = null
+/** 来源父容器（首扇相对容器测距） */
+let openContainer: CascadeAnchor | null = null
 
 function sessionKey(s: Session): string {
   if (s.mode === 'create') return `create:${s.insertPos ?? 'glossary'}`
@@ -101,6 +108,7 @@ function teardownMount() {
 function discardSession() {
   session = null
   openBeside = null
+  openContainer = null
 }
 
 function present() {
@@ -111,9 +119,27 @@ function present() {
 
   const isCreate = s.mode === 'create'
   const besideRect = openBeside
+  const containerRect = openContainer
   openBeside = null
+  openContainer = null
   const remarkId =
     s.mode === 'create' ? '' : String(s.remarkId || '').trim()
+  const store = useGlossaryStore()
+  const editTitle =
+    s.mode === 'create' ? '' : sanitizeTermTitle(s.title) || s.title
+  const initialSourcePath =
+    s.mode === 'create'
+      ? ''
+      : s.mode === 'catalog-edit'
+        ? String(s.sourcePath || '')
+        : normalizeDocPath(getActiveDocPath()) ||
+          String(store.getTerm(editTitle)?.sourcePath || '')
+  const initialRefSources = editTitle
+    ? normalizeRefSources(store.getTerm(editTitle)?.refSources, store.index.entries)
+    : []
+  const initialRefs = editTitle
+    ? normalizeTermRefs(store.getTerm(editTitle)?.refs, initialRefSources)
+    : {}
 
   let mount!: FloatHostMount
   mount = openFloatHost({
@@ -121,6 +147,7 @@ function present() {
     width: EDITOR_W,
     height: EDITOR_H,
     besideRect,
+    containerRect,
     rootClassName: 'ext-term-editor-float-root',
     component: TermEditorFloatHost,
     props: ({ place, zIndex }) => ({
@@ -133,6 +160,9 @@ function present() {
         isCreate && s.mode === 'create'
           ? String(s.preferredTargetPath || GLOSSARY_DEFAULT_FILE)
           : '',
+      initialSourcePath,
+      initialRefs,
+      initialRefSources,
       remarkId,
       floatLeft: place.left,
       floatTop: place.top,
@@ -165,9 +195,19 @@ async function persistCatalogFields(opts: {
   title: string
   description: string
   sourcePath: string
+  refs?: Record<string, string[]>
+  refSources?: string[]
 }) {
   const store = useGlossaryStore()
   const prev = store.getTerm(opts.title)
+  const refSources =
+    opts.refSources !== undefined
+      ? normalizeRefSources(opts.refSources, store.index.entries)
+      : normalizeRefSources(prev?.refSources, store.index.entries)
+  const refs =
+    opts.refs !== undefined
+      ? normalizeTermRefs(opts.refs, refSources)
+      : normalizeTermRefs(prev?.refs, refSources)
   const terms = {
     ...store.terms,
     [opts.title]: prev
@@ -175,11 +215,15 @@ async function persistCatalogFields(opts: {
           ...prev,
           description: opts.description,
           sourcePath: opts.sourcePath || prev.sourcePath || '',
+          refs,
+          refSources,
         }
       : {
           title: opts.title,
           description: opts.description,
           sourcePath: opts.sourcePath || '',
+          refs,
+          refSources,
           ignoreContexts: [],
           formerTitles: [],
           pendingManualConfirm: [],
@@ -193,6 +237,8 @@ async function handleCatalogConfirm(
   payload: {
     title: string
     description: string
+    refs?: Record<string, string[]>
+    refSources?: string[]
   },
 ) {
   const store = useGlossaryStore()
@@ -237,6 +283,8 @@ async function handleCatalogConfirm(
         title,
         description,
         sourcePath,
+        refs: payload.refs,
+        refSources: payload.refSources,
       })
     } else if (renamed) {
       await commitTermRename({
@@ -250,12 +298,16 @@ async function handleCatalogConfirm(
         title,
         description,
         sourcePath: '',
+        refs: payload.refs,
+        refSources: payload.refSources,
       })
     } else {
       await persistCatalogFields({
         title,
         description,
         sourcePath: '',
+        refs: payload.refs,
+        refSources: payload.refSources,
       })
     }
   } catch (err) {
@@ -285,7 +337,12 @@ async function handleConfirm(payload: ConfirmPayload) {
   }
 
   if (s.mode === 'catalog-edit') {
-    await handleCatalogConfirm(s, { title, description })
+    await handleCatalogConfirm(s, {
+      title,
+      description,
+      refs: payload.refs,
+      refSources: payload.refSources,
+    })
     return
   }
 
@@ -319,6 +376,8 @@ async function handleConfirm(payload: ConfirmPayload) {
           title,
           description,
           sourcePath,
+          refs: payload.refs,
+          refSources: payload.refSources,
         })
       } else {
         await ensureGlossaryEntryFile(sourcePath)
@@ -339,6 +398,8 @@ async function handleConfirm(payload: ConfirmPayload) {
           title,
           description,
           sourcePath,
+          refs: payload.refs,
+          refSources: payload.refSources,
         })
         wrapCreateSelectionAsTermRef(s, title)
       }
@@ -388,14 +449,24 @@ async function handleConfirm(payload: ConfirmPayload) {
         editor,
       })
       const prev = store.getTerm(title)
+      const refSources =
+        payload.refSources !== undefined
+          ? normalizeRefSources(payload.refSources, store.index.entries)
+          : normalizeRefSources(prev?.refSources, store.index.entries)
+      const refs =
+        payload.refs !== undefined
+          ? normalizeTermRefs(payload.refs, refSources)
+          : normalizeTermRefs(prev?.refs, refSources)
       const terms = {
         ...store.terms,
         [title]: prev
-          ? { ...prev, description }
+          ? { ...prev, description, refs, refSources }
           : {
               title,
               description,
               sourcePath: '',
+              refs,
+              refSources,
               ignoreContexts: [],
               formerTitles: [],
               pendingManualConfirm: [],
@@ -420,14 +491,24 @@ async function handleConfirm(payload: ConfirmPayload) {
   }
   try {
     const prev = store.getTerm(title)
+    const refSources =
+      payload.refSources !== undefined
+        ? normalizeRefSources(payload.refSources, store.index.entries)
+        : normalizeRefSources(prev?.refSources, store.index.entries)
+    const refs =
+      payload.refs !== undefined
+        ? normalizeTermRefs(payload.refs, refSources)
+        : normalizeTermRefs(prev?.refs, refSources)
     const terms = {
       ...store.terms,
       [title]: prev
-        ? { ...prev, description }
+        ? { ...prev, description, refs, refSources }
         : {
             title,
             description,
             sourcePath: '',
+            refs,
+            refSources,
             ignoreContexts: [],
             formerTitles: [],
             pendingManualConfirm: [],
@@ -482,6 +563,7 @@ async function ensureGlossaryEntryFile(sourcePath: string) {
 function openSession(
   next: Session,
   besideRect?: CascadeAnchor | null,
+  containerRect?: CascadeAnchor | null,
 ) {
   // 同一编辑会话已打开：置顶 + 闪烁，不重挂（避免丢未保存草稿）
   if (session && floatMount && sessionKey(session) === sessionKey(next)) {
@@ -490,6 +572,7 @@ function openSession(
   }
   session = next
   openBeside = besideRect ?? null
+  openContainer = containerRect ?? null
   present()
 }
 
@@ -558,11 +641,12 @@ function rectFromDom(el: Element | null | undefined): CascadeAnchor | null {
   return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
 }
 
-/** 从定义块打开编辑：贴定义块右侧（与预览浮层同一套规则） */
+/** 从定义块打开编辑：锚点为编辑按钮，容器为整块定义 */
 export function openTermEditorEdit(opts: {
   editor: Editor
   nodePos: number
   besideRect?: CascadeAnchor | null
+  containerRect?: CascadeAnchor | null
 }) {
   const { editor } = opts
   if (editor.isDestroyed) return
@@ -572,9 +656,11 @@ export function openTermEditorEdit(opts: {
   const title = sanitizeTermTitle(node.attrs.title) || String(node.attrs.title ?? '')
   const description = serializeTermDescriptionFromNode(node)
   const remarkId = getTermRemarkIdFromNode(node)
+  const blockEl = editor.view.nodeDOM(nodePos) as Element | null
   const beside =
-    opts.besideRect ??
-    rectFromDom(editor.view.nodeDOM(nodePos) as Element | null)
+    opts.besideRect ?? rectFromDom(blockEl)
+  const container =
+    opts.containerRect ?? rectFromDom(blockEl)
   openSession(
     {
       mode: 'edit',
@@ -585,6 +671,7 @@ export function openTermEditorEdit(opts: {
       remarkId,
     },
     beside,
+    container,
   )
 }
 

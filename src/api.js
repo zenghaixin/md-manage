@@ -139,7 +139,12 @@ export const api = {
     }),
 
   getGlossary: () => request('/api/glossary'),
+  getGlossaryIndex: () => request('/api/glossary/index'),
   getGlossaryEntries: () => request('/api/glossary/entries'),
+  getGlossaryFileTerms: (pathRel) =>
+    request(
+      `/api/glossary/file-terms?path=${encodeURIComponent(String(pathRel || ''))}`,
+    ),
   putGlossary: (body) =>
     request('/api/glossary', { method: 'PUT', body: JSON.stringify(body) }),
   syncGlossary: () => request('/api/glossary/sync', { method: 'POST' }),

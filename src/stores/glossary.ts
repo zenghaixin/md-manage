@@ -16,6 +16,12 @@ import {
   type PendingConflictItem,
 } from '../editor/extensions/term-glossary/core/model/syntax'
 import { syncSegmenterTitles } from '../editor/extensions/term-glossary/core/match/segmenter'
+import {
+  normalizeRefSources,
+  normalizeTermRefs,
+  type GlossaryIndexEntry,
+  type GlossaryIndexFile,
+} from '../editor/extensions/term-glossary/core/shared/termRefSlots'
 import { queueTermFlash } from '../editor/extensions/term-glossary/core/shared/flashTerm'
 
 export type { PendingConflictItem }
@@ -24,6 +30,10 @@ export interface GlossaryTerm {
   title: string
   description: string
   sourcePath: string
+  /** 引用槽位值（仅部分入口文件有槽位，如人物.md） */
+  refs?: Record<string, string[]>
+  /** 各槽位选用的数据源文件 id */
+  refSources?: string[]
   ignoreContexts: string[]
   /** 曾用名：仅提示，不自动改文案 */
   formerTitles: string[]
@@ -37,16 +47,25 @@ export interface GlossaryTerm {
 export interface GlossaryFile {
   lastUpdated: string
   terms: Record<string, GlossaryTerm>
+  index?: GlossaryIndexFile
 }
 
-function normalizeTerm(raw: Partial<GlossaryTerm> & { title?: string }): GlossaryTerm | null {
+export type { GlossaryIndexEntry }
+
+function normalizeTerm(
+  raw: Partial<GlossaryTerm> & { title?: string },
+  indexEntries: GlossaryIndexEntry[] = [],
+): GlossaryTerm | null {
   const title = sanitizeTermTitle(raw.title)
   if (!title) return null
+  const refSources = normalizeRefSources(raw.refSources, indexEntries)
   return {
     title,
     description: peelRemarkBraceFromDescription(String(raw.description ?? ''))
       .description,
     sourcePath: String(raw.sourcePath ?? ''),
+    refs: normalizeTermRefs(raw.refs, refSources),
+    refSources,
     ignoreContexts: normalizeIgnoreContexts(raw.ignoreContexts),
     formerTitles: normalizeFormerTitles(raw.formerTitles).filter((f) => f !== title),
     pendingManualConfirm: normalizePendingManualConfirm(raw.pendingManualConfirm),
@@ -80,10 +99,12 @@ export const useGlossaryStore = defineStore('glossary', {
   state: (): {
     lastUpdated: string
     terms: Record<string, GlossaryTerm>
+    index: GlossaryIndexFile
     loaded: boolean
   } => ({
     lastUpdated: '',
     terms: {},
+    index: { version: 2, entries: [] },
     loaded: false,
   }),
 
@@ -111,10 +132,20 @@ export const useGlossaryStore = defineStore('glossary', {
   actions: {
     applyPayload(data: GlossaryFile | null | undefined) {
       this.lastUpdated = data?.lastUpdated || ''
+      this.index =
+        data?.index && Array.isArray(data.index.entries)
+          ? {
+              version: Number(data.index.version) || 2,
+              entries: data.index.entries,
+            }
+          : { version: 2, entries: [] }
       const raw = data?.terms && typeof data.terms === 'object' ? data.terms : {}
       const normalized: Record<string, GlossaryTerm> = {}
       for (const [key, term] of Object.entries(raw)) {
-        const n = normalizeTerm({ ...term, title: term?.title ?? key })
+        const n = normalizeTerm(
+          { ...term, title: term?.title ?? key },
+          this.index.entries,
+        )
         if (!n) continue
         normalized[n.title] = n
       }
@@ -189,6 +220,8 @@ export const useGlossaryStore = defineStore('glossary', {
         title: to,
         description,
         sourcePath: sourcePath || prev?.sourcePath || '',
+        refs: normalizeTermRefs(prev?.refs, normalizeRefSources(prev?.refSources, this.index.entries)),
+        refSources: normalizeRefSources(prev?.refSources, this.index.entries),
         ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
         formerTitles: former,
         pendingManualConfirm: [],

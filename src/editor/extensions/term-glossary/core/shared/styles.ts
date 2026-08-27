@@ -11,7 +11,7 @@ export const TERM_GLOSSARY_STYLES = `
   position: relative;
   display: block;
   margin: 0.35em 0 16px;
-  padding: 0.15em 0.55em;
+  padding: 0.15em 0.55em 0;
   border-left: 2px solid color-mix(in srgb, currentColor 28%, transparent);
   cursor: pointer;
 }
@@ -20,15 +20,11 @@ export const TERM_GLOSSARY_STYLES = `
   background: color-mix(in srgb, #3b82f6 12%, transparent);
   border-left-color: #3b82f6;
   border-radius: 4px;
-  padding-right: 4.2rem;
 }
 
 .ext-term-actions {
-  position: absolute;
-  top: 0.1rem;
-  right: 0.2rem;
-  z-index: 2;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 0.2rem;
 }
@@ -126,8 +122,10 @@ html.dark .ext-term-node.is-flash,
 .ext-term-title-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.4rem;
   margin-bottom: 0.15em;
+  min-height: 1.35rem;
 }
 
 .ext-term-label {
@@ -157,7 +155,7 @@ html.dark .ext-term-node.is-flash,
 .ext-term-desc {
   display: block;
   margin-top: 0.15em;
-  min-height: 1.2em;
+  min-height: 0;
   font-weight: inherit;
   color: inherit;
   cursor: pointer;
@@ -166,8 +164,8 @@ html.dark .ext-term-node.is-flash,
 }
 
 .ext-term-desc > p {
-  margin: 0.35em 0;
-  min-height: 1.2em;
+  margin: 0.35em 0 0;
+  min-height: 0;
 }
 
 .ext-term-desc > p:first-child {
@@ -182,6 +180,12 @@ html.dark .ext-term-node.is-flash,
   display: block;
   content: '';
   margin-top: 0.35em;
+}
+
+/* 段末占位 br 不要撑出一块空白，否则左边线看起来空一截 */
+.ext-term-desc br.ProseMirror-trailingBreak {
+  display: none;
+  margin: 0;
 }
 
 /* 描述区内 Markdown 块级样式 */

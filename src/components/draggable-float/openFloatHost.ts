@@ -49,6 +49,8 @@ export interface OpenFloatHostOptions {
   height: number
   besideRect?: CascadeAnchor | null
   anchorRect?: CascadeAnchor | null
+  /** 来源父容器矩形（首扇相对容器测距） */
+  containerRect?: CascadeAnchor | null
   rootClassName: string
   component: Component
   props?:
@@ -69,6 +71,7 @@ export function openFloatHost(opts: OpenFloatHostOptions): FloatHostMount {
     height: opts.height,
     besideRect: opts.besideRect,
     anchorRect: opts.anchorRect,
+    containerRect: opts.containerRect,
   })
   const zIndex = opts.zIndex ?? nextFloatZIndex()
 

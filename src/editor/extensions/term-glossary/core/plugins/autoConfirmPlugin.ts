@@ -168,6 +168,12 @@ export function createAutoConfirmPlugin(opts: {
           },
           key,
           resumeTyping,
+          {
+            view,
+            from: hit.from,
+            to: hit.to,
+            matchTitle: hit.matchTitle,
+          },
         )
       }
 
