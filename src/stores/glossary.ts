@@ -23,6 +23,7 @@ import {
   type GlossaryIndexFile,
 } from '../editor/extensions/term-glossary/core/shared/termRefSlots'
 import { queueTermFlash } from '../editor/extensions/term-glossary/core/shared/flashTerm'
+import { recordRecentTerm } from '../editor/extensions/term-glossary/core/shared/termRecent'
 
 export type { PendingConflictItem }
 
@@ -93,6 +94,43 @@ function scrubIgnoreContexts(
 
 function syncSegmenterFromTerms(terms: Record<string, GlossaryTerm>) {
   syncSegmenterTitles(Object.keys(terms))
+}
+
+function normGlossaryRelPath(sourcePath: string): string {
+  return String(sourcePath || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '')
+    .trim()
+}
+
+function hasCatalogFields(term: GlossaryTerm | null | undefined): boolean {
+  if (!term) return false
+  if ((term.refSources?.length ?? 0) > 0) return true
+  return Object.values(term.refs || {}).some((list) => (list?.length ?? 0) > 0)
+}
+
+/** PATCH 同步 md 时保留内存里已有的引用槽位，避免竞态抹掉 refs/refSources */
+function mergeFileCatalogFields(
+  incoming: Record<string, GlossaryTerm>,
+  prev: Record<string, GlossaryTerm>,
+  sourcePath: string,
+  indexEntries: GlossaryIndexEntry[],
+): Record<string, GlossaryTerm> {
+  const want = normGlossaryRelPath(sourcePath)
+  if (!want) return incoming
+  const out = { ...incoming }
+  for (const [key, term] of Object.entries(out)) {
+    if (normGlossaryRelPath(term.sourcePath || '') !== want) continue
+    const p = prev[key]
+    if (!p || !hasCatalogFields(p) || hasCatalogFields(term)) continue
+    const refSources = normalizeRefSources(p.refSources, indexEntries)
+    out[key] = {
+      ...term,
+      refSources,
+      refs: normalizeTermRefs(p.refs, refSources),
+    }
+  }
+  return out
 }
 
 export const useGlossaryStore = defineStore('glossary', {
@@ -307,11 +345,9 @@ export const useGlossaryStore = defineStore('glossary', {
     },
 
     async syncFileByPath(sourcePath: string, markdown: string) {
-      const path = String(sourcePath || '')
-        .replace(/\\/g, '/')
-        .replace(/^\/+|\/+$/g, '')
-        .trim()
+      const path = normGlossaryRelPath(sourcePath)
       if (!path) return
+      const prevTerms = { ...this.terms }
       const { isGlossaryDefPath } = await import(
         '../editor/extensions/term-glossary/core/shared/glossaryPaths'
       )
@@ -334,6 +370,14 @@ export const useGlossaryStore = defineStore('glossary', {
         sourcePath: path,
         terms: fileTerms,
       })) as GlossaryFile
+      if (data?.terms && typeof data.terms === 'object') {
+        data.terms = mergeFileCatalogFields(
+          data.terms,
+          prevTerms,
+          path,
+          this.index.entries,
+        )
+      }
       this.applyPayload(data)
     },
 
@@ -346,6 +390,11 @@ export const useGlossaryStore = defineStore('glossary', {
     },
 
     requestOpenSource(sourcePath: string, focusTerm?: string) {
+      const title = String(focusTerm ?? '').trim()
+      const path = String(sourcePath ?? '').trim()
+      if (title && path) {
+        recordRecentTerm(title, path)
+      }
       if (focusTerm) {
         queueTermFlash(focusTerm)
       }

@@ -19,6 +19,7 @@ export function bindRemarkPanel(): void {
     id: REMARK_PANEL_MODULE_ID,
     label: '备注',
     order: 20,
+    defaultWidth: 520,
     isVisible: () => hasRemarksInEditor(),
     mount(host) {
       host.replaceChildren()

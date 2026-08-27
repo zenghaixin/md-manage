@@ -1,5 +1,5 @@
 /**
- * 右侧「词条」书签模块：按定义 .md 文件名分组列出词条，可搜索与跳转。
+ * 右侧「词条」书签：Hub 分区（常用 / 按文件 / 功能）；子页为全库或单文件浏览。
  */
 import { createApp, type App } from 'vue'
 import { getActivePinia } from 'pinia'
@@ -18,6 +18,7 @@ export function bindTermGlossaryPanel(): void {
     id: TERM_GLOSSARY_PANEL_MODULE_ID,
     label: '词条',
     order: 10,
+    defaultWidth: 520,
     isVisible: () => true,
     mount(host) {
       host.replaceChildren()

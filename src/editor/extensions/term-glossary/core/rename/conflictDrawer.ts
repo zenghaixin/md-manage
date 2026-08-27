@@ -210,6 +210,7 @@ export function bindPendingConflictRestore(): void {
     id: TERM_CONFLICT_MODULE_ID,
     label: '冲突审查',
     order: 10,
+    defaultWidth: 400,
     isVisible: () => hasAnyPendingConflicts(),
     mount(host) {
       if (!collectAllPendingGroups().length) return

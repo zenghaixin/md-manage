@@ -514,11 +514,11 @@ async function handleConfirm(payload: ConfirmPayload) {
             pendingManualConfirm: [],
           },
     }
+    await requestSaveCurrentFile()
     await store.persistTerms(terms)
   } catch (err) {
     console.warn('[term-editor] persist edit failed:', err)
   }
-  requestSaveCurrentFile()
   closeAfterConfirm()
 }
 

@@ -22,6 +22,7 @@ import {
   loadGlossaryIndex,
   normalizeRefSources,
   normalizeTermRefs,
+  resolveDefaultRefSources,
   resolveRefSlots,
   resolveSourceIdByPath,
 } from '../shared/termRefSlots'
@@ -82,9 +83,25 @@ const refSlotDefs = computed(() =>
   resolveRefSlots(refSourceIds.value, glossaryIndexEntries.value),
 )
 
+function resolveEntryPathForRefSlots() {
+  if (props.mode === 'edit') {
+    return normalizeDocPath(props.initialSourcePath || '')
+  }
+  return normalizeDocPath(
+    targetPath.value || props.initialTargetPath || GLOSSARY_DEFAULT_FILE,
+  )
+}
+
 function initSlotValuesFromProps() {
   const indexEntries = glossaryIndexEntries.value
-  const initialSources = normalizeRefSources(props.initialRefSources, indexEntries)
+  const entryPath = resolveEntryPathForRefSlots()
+  let initialSources = normalizeRefSources(props.initialRefSources, indexEntries)
+  if (!initialSources.length) {
+    initialSources = normalizeRefSources(props.initialRefs, indexEntries)
+  }
+  if (!initialSources.length) {
+    initialSources = resolveDefaultRefSources(entryPath, indexEntries)
+  }
   const initial = normalizeTermRefs(props.initialRefs, initialSources)
   refSourceIds.value = [...initialSources]
   slotValues.value = { ...initial }
@@ -305,6 +322,15 @@ watch(
   () => props.mode,
   () => {
     if (props.mode === 'create') void loadEntryOptions()
+  },
+)
+
+watch(
+  () => targetPath.value,
+  () => {
+    if (props.mode !== 'create' || !glossaryIndexEntries.value.length) return
+    initSlotValuesFromProps()
+    void refreshAllSlotOptions(true)
   },
 )
 

@@ -900,6 +900,44 @@ app.patch('/api/glossary/file', async (req, res) => {
       }
     }
 
+    // 与 PUT /api/glossary 并发时：若磁盘上已有引用槽位，避免 PATCH 晚到把它抹掉
+    const latestData = await readGlossaryFile()
+    const latestLookup = glossaryLookupFrom(latestData)
+    for (const title of newTitles) {
+      const latestTerm = latestData.terms?.[title]
+      const nextTerm = nextTerms[title]
+      if (!latestTerm || !nextTerm || latestTerm.sourcePath !== sourcePath) continue
+      const latestRefSources = normalizeRefSourcesForLookup(
+        latestTerm.refSources,
+        latestLookup,
+      )
+      const nextRefSources = normalizeRefSourcesForLookup(
+        nextTerm.refSources,
+        latestLookup,
+      )
+      const latestHasCatalog =
+        latestRefSources.length > 0 ||
+        Object.values(
+          normalizeTermRefsForLookup(latestTerm.refs, latestRefSources, latestLookup),
+        ).some((list) => list.length)
+      const nextHasCatalog =
+        nextRefSources.length > 0 ||
+        Object.values(
+          normalizeTermRefsForLookup(nextTerm.refs, nextRefSources, latestLookup),
+        ).some((list) => list.length)
+      if (latestHasCatalog && !nextHasCatalog) {
+        nextTerms[title] = {
+          ...nextTerm,
+          refSources: latestRefSources,
+          refs: normalizeTermRefsForLookup(
+            latestTerm.refs,
+            latestRefSources,
+            latestLookup,
+          ),
+        }
+      }
+    }
+
     res.json(await writeGlossaryFile({ terms: nextTerms }))
   } catch (err) {
     res.status(500).json({ error: err.message })

@@ -20,6 +20,7 @@ import {
 } from '../editor/shellEvents'
 import {
   getRightPanelModule,
+  getRightPanelModuleDefaultWidth,
   listVisibleRightPanelModules,
   onRightPanelModulesChanged,
   resolveActiveRightPanelModuleId,
@@ -153,9 +154,12 @@ function unmountActiveModule() {
   mountedModuleId = ''
 }
 
-async function activateModule(moduleId, { persist = true } = {}) {
+async function activateModule(moduleId, { persist = true, applyWidth = true } = {}) {
   const next = resolveModuleId(moduleId)
   activeModuleId.value = next
+  if (applyWidth && next) {
+    applyModuleDefaultWidth(next)
+  }
   // 仅用户点书签时持久化；扩展自动打开右栏不要写 .app-config（会触发 Vite 整页刷新）
   if (persist) {
     void patchAppConfig({ rightPanelActiveModuleId: next })
@@ -177,6 +181,7 @@ async function toggleRightPanel() {
   } else {
     rightOpen.value = true
     activeModuleId.value = resolveModuleId(activeModuleId.value)
+    applyModuleDefaultWidth(activeModuleId.value)
     await mountActiveModule()
     notifyRightPanelOpened()
   }
@@ -226,6 +231,13 @@ function clampRight(next) {
   const left = showLeftPane.value ? leftWidth.value + SPLITTER_W : 0
   const max = Math.max(RIGHT_MIN, total - EDITOR_MIN - left - SPLITTER_W)
   return Math.min(Math.max(next, RIGHT_MIN), max)
+}
+
+/** 切换右栏书签时应用该模块注册的 defaultWidth */
+function applyModuleDefaultWidth(moduleId) {
+  const id = String(moduleId || '').trim()
+  if (!id) return
+  rightWidth.value = clampRight(getRightPanelModuleDefaultWidth(id, RIGHT_DEFAULT))
 }
 
 function onLeftDragStart() {

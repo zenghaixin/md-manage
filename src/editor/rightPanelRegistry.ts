@@ -7,6 +7,8 @@ export type RightPanelModule = {
   label: string
   /** 越小越靠上 */
   order?: number
+  /** 激活该书签时右栏默认宽度（px）；省略则用壳层全局默认 */
+  defaultWidth?: number
   isVisible: () => boolean
   mount: (host: HTMLElement) => void
   unmount?: () => void
@@ -45,6 +47,19 @@ export function listVisibleRightPanelModules(): RightPanelModule[] {
 
 export function getRightPanelModule(id: string): RightPanelModule | null {
   return modules.get(id) || null
+}
+
+/** 模块注册时的默认右栏宽度；未配置则返回 fallback */
+export function getRightPanelModuleDefaultWidth(
+  id: string,
+  fallback = 320,
+): number {
+  const mod = modules.get(id)
+  const w = mod?.defaultWidth
+  if (typeof w === 'number' && Number.isFinite(w) && w > 0) {
+    return Math.round(w)
+  }
+  return fallback
 }
 
 export function onRightPanelModulesChanged(handler: () => void): () => void {

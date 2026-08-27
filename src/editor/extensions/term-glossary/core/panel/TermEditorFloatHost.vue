@@ -18,7 +18,7 @@ const props = defineProps({
   initialTargetPath: { type: String, default: '' },
   initialSourcePath: { type: String, default: '' },
   initialRefs: { type: Object, default: () => ({}) },
-  initialRefSources: { type: Object, default: () => ({}) },
+  initialRefSources: { type: Array, default: () => [] },
   remarkId: { type: String, default: '' },
   floatLeft: { type: Number, default: null },
   floatTop: { type: Number, default: null },

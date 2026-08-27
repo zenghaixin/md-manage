@@ -38,6 +38,16 @@ const LEGACY_REF_SLOT_PATHS: Record<string, string> = {
   events: '词条/世界观/历史事件.md',
 }
 
+/** 人物等入口文件：首版写死的默认引用数据源（path） */
+export const CHARACTERS_FILE = '词条/角色/人物.md'
+
+const DEFAULT_REF_SOURCE_PATHS_BY_ENTRY: Record<string, string[]> = {
+  [CHARACTERS_FILE]: [
+    LEGACY_REF_SLOT_PATHS.weapons,
+    LEGACY_REF_SLOT_PATHS.events,
+  ],
+}
+
 function isUuidLike(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
@@ -153,6 +163,23 @@ export function resolveSourceIdByPath(
     (e) => normalizeDocPath(e.path) === want,
   )
   return found?.id || ''
+}
+
+/** 按词条入口文件返回默认引用数据源 id（如人物.md → 武器、历史事件） */
+export function resolveDefaultRefSources(
+  entryPath: string,
+  indexEntries: GlossaryIndexEntry[] = [],
+): TermRefSources {
+  const paths =
+    DEFAULT_REF_SOURCE_PATHS_BY_ENTRY[normalizeDocPath(entryPath)] || []
+  if (!paths.length) return []
+  const { idByPath } = buildIndexMaps(indexEntries)
+  const out: string[] = []
+  for (const p of paths) {
+    const id = idByPath.get(normalizeDocPath(p))
+    if (id) out.push(id)
+  }
+  return out
 }
 
 /** 从词库筛出某 md 下全部词条标题（兜底） */
