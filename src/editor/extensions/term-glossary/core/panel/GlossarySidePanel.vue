@@ -299,20 +299,8 @@ function onDocPointerCancel(e) {
   unbindDocListeners()
 }
 
-function onOpenTerm(item) {
-  if (suppressClick) {
-    suppressClick = false
-    return
-  }
-  if (isTermCapsuleDragging()) return
-  const path = String(item?.sourcePath || '').trim()
-  const title = String(item?.title || '').trim()
-  if (!path || !title) return
-  store.requestOpenSource(path, title)
-}
-
-/** 常用词条：短按打开预览弹窗，不跳转源文件 */
-function onOpenFrequentTerm(item, event) {
+/** 短按打开预览弹窗，不跳转源文件（常用 / 全库预览共用） */
+function onOpenTerm(item, event) {
   if (suppressClick) {
     suppressClick = false
     return
@@ -387,7 +375,7 @@ onBeforeUnmount(() => {
             class="glossary-side-panel__tag"
             :title="`${term.group} · 短按预览 · 长按拖入正文`"
             @pointerdown="onTagPointerDown($event, term)"
-            @click="onOpenFrequentTerm(term, $event)"
+            @click="onOpenTerm(term, $event)"
           >
             {{ term.title }}
           </button>
@@ -446,9 +434,9 @@ onBeforeUnmount(() => {
               :key="`${term.sourcePath}:${term.title}`"
               type="button"
               class="glossary-side-panel__tag"
-              :title="`短按打开 · 长按拖入正文：${term.title}`"
+              :title="`短按预览 · 长按拖入正文：${term.title}`"
               @pointerdown="onTagPointerDown($event, term)"
-              @click="onOpenTerm(term)"
+              @click="onOpenTerm(term, $event)"
             >
               {{ term.title }}
             </button>
