@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "fields": [
+    {
+      "key": "when",
+      "label": "时间节点",
+      "type": "text"
+    },
+    {
+      "key": "participants",
+      "label": "参与人物",
+      "type": "term",
+      "sourcePath": "词条/角色/人物.md"
+    }
+  ]
+}

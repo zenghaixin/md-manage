@@ -15,6 +15,11 @@ import {
   readIndexPayload,
   writeIndexPayload,
 } from './glossaryIndex.js'
+import {
+  createSchemaStore,
+  normalizeExtraFields,
+  normalizeFieldValues,
+} from './glossarySchema.js'
 
 export const GLOSSARY_ROOT = '词条'
 export const GLOSSARY_META_DIR = '.glossary'
@@ -31,6 +36,7 @@ export const GLOSSARY_DEFAULT_FILE = `${GLOSSARY_ROOT}/${GLOSSARY_DEFAULT_MD}`
 export function createGlossaryStore(docsRoot, deps) {
   const metaAbs = path.join(docsRoot, GLOSSARY_ROOT, GLOSSARY_META_DIR)
   const indexAbs = path.join(metaAbs, 'index.json')
+  const schemaStore = createSchemaStore(metaAbs)
 
   function norm(p) {
     return deps.normRel(p)
@@ -70,6 +76,8 @@ export function createGlossaryStore(docsRoot, deps) {
         : [],
       refs,
       refSources,
+      fieldValues: normalizeFieldValues(term?.fieldValues),
+      extraFields: normalizeExtraFields(term?.extraFields),
     }
   }
 
@@ -277,6 +285,8 @@ export function createGlossaryStore(docsRoot, deps) {
             : [],
           refs: normalizeTermRefs(term?.refs, term?.refSources || []),
           refSources: normalizeRefSources(term?.refSources, lookup),
+          fieldValues: normalizeFieldValues(term?.fieldValues),
+          extraFields: normalizeExtraFields(term?.extraFields),
         }
       }
     }
@@ -323,6 +333,8 @@ export function createGlossaryStore(docsRoot, deps) {
           : [],
         refs: normalizeTermRefs(term?.refs, refSources),
         refSources,
+        fieldValues: normalizeFieldValues(term?.fieldValues),
+        extraFields: normalizeExtraFields(term?.extraFields),
       }
     }
 
@@ -370,6 +382,43 @@ export function createGlossaryStore(docsRoot, deps) {
     }
   }
 
+  async function resolveEntryByPath(sourcePath) {
+    const want = norm(sourcePath)
+    if (!want) return null
+    const index = await rebuildIndex()
+    return index.entries.find((e) => e.path === want) || null
+  }
+
+  async function readSchemaByPath(sourcePath) {
+    const entry = await resolveEntryByPath(sourcePath)
+    if (!entry) {
+      throw Object.assign(new Error('入口文件不在词条索引中'), { status: 404 })
+    }
+    const schema = await schemaStore.readSchema(entry.id)
+    return {
+      entryId: entry.id,
+      path: entry.path,
+      fileName: entry.fileName,
+      schema,
+      presets: schemaStore.listPresetNames(),
+      suggested: schemaStore.presetByFileName(entry.fileName),
+    }
+  }
+
+  async function writeSchemaByPath(sourcePath, schema) {
+    const entry = await resolveEntryByPath(sourcePath)
+    if (!entry) {
+      throw Object.assign(new Error('入口文件不在词条索引中'), { status: 404 })
+    }
+    const saved = await schemaStore.writeSchema(entry.id, schema)
+    return {
+      entryId: entry.id,
+      path: entry.path,
+      fileName: entry.fileName,
+      schema: saved,
+    }
+  }
+
   return {
     metaAbs,
     rebuildIndex,
@@ -380,6 +429,9 @@ export function createGlossaryStore(docsRoot, deps) {
     writeGlossaryFile,
     ensureDefaultMd,
     wipeLegacyDataDir,
+    readSchemaByPath,
+    writeSchemaByPath,
+    schemaStore,
     GLOSSARY_DEFAULT_FILE,
     GLOSSARY_ROOT,
     normalizeTermRefs,

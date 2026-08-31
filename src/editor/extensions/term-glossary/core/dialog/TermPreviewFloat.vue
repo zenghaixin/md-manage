@@ -33,6 +33,7 @@ import { openTermEditorEditByTitle } from '../panel/termEditorPanel'
 import { openTermRemarkFloat } from '../shared/openTermRemarkFloat'
 import { lookupLiveTermRemarkId } from '../shared/termRemarkAccess'
 import { lookupTermRemarkInMarkdown } from '../shared/remoteTermRemark'
+import { fetchTermSchema } from '../shared/termSchema'
 
 const DIALOG_W = 400
 const DIALOG_MAX_H = 500
@@ -60,6 +61,8 @@ const descHost = ref(null)
 const localTerm = ref({ ...props.term })
 const localTitles = ref([...props.titles])
 const saving = ref(false)
+/** @type {import('vue').Ref<Array<{ label: string, value: string }>>} */
+const displayFields = ref([])
 
 ensureTermGlossaryStyles()
 
@@ -71,6 +74,48 @@ const showRemarkBtn = computed(() => !!remarkId.value)
 const pathTitle = computed(() =>
   sourcePath.value ? `打开 ${sourcePath.value}` : '无来源路径',
 )
+
+function formatFieldValue(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join('、')
+  return String(value ?? '').trim()
+}
+
+async function refreshDisplayFields() {
+  const rows = []
+  const path = String(localTerm.value.sourcePath || '').trim()
+  const values = localTerm.value.fieldValues || {}
+  let schemaFields = []
+  if (path) {
+    try {
+      const data = await fetchTermSchema(path)
+      schemaFields = data.schema.fields || []
+    } catch {
+      schemaFields = []
+    }
+  }
+  for (const field of schemaFields) {
+    const text = formatFieldValue(values[field.key])
+    if (!text) continue
+    rows.push({ label: field.label, value: text })
+  }
+  // 无 schema 时仍展示已有 fieldValues
+  if (!schemaFields.length) {
+    for (const [key, val] of Object.entries(values)) {
+      const text = formatFieldValue(val)
+      if (!text) continue
+      rows.push({ label: key, value: text })
+    }
+  }
+  for (const extra of localTerm.value.extraFields || []) {
+    const text = formatFieldValue(extra.value)
+    if (!text) continue
+    rows.push({
+      label: String(extra.label || '自定义').trim() || '自定义',
+      value: text,
+    })
+  }
+  displayFields.value = rows
+}
 
 /** 从当前文档定义块补全 remarkId */
 function refreshRemarkIdFromEditor() {
@@ -258,9 +303,12 @@ function syncFromResolved(term, titles) {
     description: nextDesc,
     sourcePath: nextPath,
     remarkId: nextRemark,
+    fieldValues: term.fieldValues || {},
+    extraFields: term.extraFields || [],
   }
   renderDesc()
   refreshRemarkIdFromEditor()
+  void refreshDisplayFields()
 }
 
 watch(
@@ -271,6 +319,7 @@ watch(
     renderDesc()
     refreshRemarkIdFromEditor()
     void refreshRemarkIdFromSource()
+    void refreshDisplayFields()
   },
 )
 
@@ -278,6 +327,7 @@ onMounted(() => {
   renderDesc()
   refreshRemarkIdFromEditor()
   void refreshRemarkIdFromSource()
+  void refreshDisplayFields()
 })
 
 onBeforeUnmount(() => {
@@ -313,6 +363,19 @@ defineExpose({
     @close="onClose?.()"
     @focus="onFocus?.()"
   >
+    <div
+      v-if="displayFields.length"
+      class="ext-term-preview-fields"
+    >
+      <div
+        v-for="(row, idx) in displayFields"
+        :key="`${row.label}:${idx}`"
+        class="ext-term-preview-field-row"
+      >
+        <span class="ext-term-preview-field-label">{{ row.label }}</span>
+        <span class="ext-term-preview-field-value">{{ row.value }}</span>
+      </div>
+    </div>
     <div
       ref="descHost"
       class="ext-term-preview-body"
@@ -354,6 +417,31 @@ defineExpose({
 </template>
 
 <style scoped>
+.ext-term-preview-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.75rem 0;
+}
+
+.ext-term-preview-field-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.ext-term-preview-field-label {
+  color: var(--muted, #5a6b75);
+  font-weight: 600;
+}
+
+.ext-term-preview-field-value {
+  color: var(--ink, #1a2830);
+  word-break: break-word;
+}
+
 .ext-term-preview-body {
   padding: 0.55rem 0.75rem;
   font-size: 0.875rem;

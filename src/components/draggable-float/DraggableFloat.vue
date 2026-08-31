@@ -23,6 +23,8 @@ const props = defineProps({
   /** 右/下/右下角拖拽改尺寸 */
   resizable: { type: Boolean, default: false },
   rootClass: { type: String, default: '' },
+  /** 追加到 body 的 class（如编辑浮层需要 flex 撑满） */
+  bodyClass: { type: String, default: '' },
   dataTermTitle: { type: String, default: '' },
 })
 
@@ -329,7 +331,10 @@ defineExpose({
         ×
       </button>
     </header>
-    <div class="draggable-float__body">
+    <div
+      class="draggable-float__body"
+      :class="bodyClass"
+    >
       <slot />
     </div>
     <footer
@@ -453,6 +458,8 @@ defineExpose({
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .draggable-float__footer {
@@ -461,7 +468,7 @@ defineExpose({
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.35rem 0.55rem;
+  padding: 0.65rem 0.75rem 0.85rem;
   border-top: 1px solid var(--border, #c5d0d8);
 }
 

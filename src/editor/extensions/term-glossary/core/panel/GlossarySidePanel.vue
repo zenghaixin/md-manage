@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 右侧「词条」Hub：常用词条 / 按入口文件 / 功能 三区；不与「武器、历史」和「关系网」混在同一功能格。
+ * 右侧「词条汇总」Hub：常用词条 / 功能（全库预览等）；字段模板已拆到「通用字段」书签。
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -160,7 +160,7 @@ const browsePageTitle = computed(() => {
 
 const breadcrumbItems = computed(() => {
   /** @type {Array<{ label: string, action: () => void }>} */
-  const items = [{ label: '词条', action: goHub }]
+  const items = [{ label: '词条汇总', action: goHub }]
   if (view.value === 'browse') {
     items.push({
       label: browsePageTitle.value,
@@ -325,7 +325,7 @@ onBeforeUnmount(() => {
     <header class="glossary-side-panel__head shrink-0 px-3 pt-3">
       <nav
         class="glossary-side-panel__breadcrumb"
-        aria-label="词条导航"
+        aria-label="词条汇总导航"
       >
         <template
           v-for="(crumb, index) in breadcrumbItems"
@@ -454,14 +454,14 @@ onBeforeUnmount(() => {
         {{ placeholderTitle || '功能开发中' }}
       </p>
       <p class="m-0 max-w-xs text-xs leading-relaxed text-muted">
-        此功能尚未实现。点击面包屑中的「词条」返回。
+        此功能尚未实现。点击面包屑中的「词条汇总」返回。
       </p>
       <button
         type="button"
         class="glossary-hub__back-btn"
         @click="goHub"
       >
-        返回词条入口
+        返回词条汇总
       </button>
     </div>
   </div>

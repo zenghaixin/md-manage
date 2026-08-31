@@ -1,83 +1,279 @@
 {
   "list": [
-    "核爆",
-    "结界魔法",
-    "扰乱雷击",
-    "吐息",
-    "无咏唱魔法",
-    "治愈魔法",
-    "重力魔法"
+    "艾丽娜莉洁",
+    "艾莉丝",
+    "艾莎",
+    "岸里卡",
+    "奥尔斯特德",
+    "保罗",
+    "基列奴",
+    "剑神加尔",
+    "杰尼斯",
+    "拉普拉斯",
+    "莉莉娅",
+    "卢德格尔",
+    "鲁迪乌斯",
+    "洛琪希",
+    "诺伦",
+    "佩尔吉乌斯",
+    "人神",
+    "水神蕾达",
+    "希露菲",
+    "亚莉艾尔",
+    "赞恩"
   ],
   "terms": {
-    "无咏唱魔法": {
-      "title": "无咏唱魔法",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "省略咏唱、以意象直接成型的魔法。term[鲁迪乌斯]因前世记忆而天生掌握，是他幼年碾压同龄魔法师的根本原因。",
+    "鲁迪乌斯": {
+      "title": "鲁迪乌斯",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "前世三十四岁无职宅男，转生为term[格雷拉特家]长子。幼年即掌握term[无咏唱魔法]，师从term[洛琪希]，后与term[艾莉丝]、term[卢德格尔]组成「死亡行军」，穿越term[魔大陆]。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
-      "refSources": []
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
     },
-    "扰乱雷击": {
-      "title": "扰乱雷击",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "term[鲁迪乌斯]的招牌进攻魔法：先以土墙扰乱视线，再以高压雷击贯穿。被评价为term[圣级]以上的实战技。",
+    "希露菲": {
+      "title": "希露菲",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "term[鲁迪乌斯]的青梅竹马，混有term[长耳族]血统。term[菲托亚转移事件]中被传送至王都，此后以「菲茨」的身份作为term[亚莉艾尔]的随从魔法师。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
-      "refSources": []
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
     },
-    "核爆": {
-      "title": "核爆",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "将火、土、风等属性压缩至极限后释放的大范围毁灭魔法。破坏力逼近term[神级]，是鲁迪少数能与列强正面对轰的手段。",
+    "艾莉丝": {
+      "title": "艾莉丝",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "term[菲托亚领]主家的大小姐，人称狂犬。师从term[基列奴]修习term[剑神流]，在term[菲托亚转移事件]后与term[鲁迪乌斯]、term[卢德格尔]同行，最终成长为剑王。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
-      "refSources": []
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
     },
-    "治愈魔法": {
-      "title": "治愈魔法",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "米里斯体系的恢复与解毒魔法。term[杰尼斯]出身此道；高级治愈甚至能处理断肢，但对灵魂损伤与失智几乎无效。",
+    "洛琪希": {
+      "title": "洛琪希",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "term[米格路迪亚族]的水魔法使，曾作为家庭教师教导term[鲁迪乌斯]。后任教于term[拉诺亚魔法大学]，是鲁迪心中「老师」的原型。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
-      "refSources": []
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
     },
-    "结界魔法": {
-      "title": "结界魔法",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "用于隔音、防护与封印的辅助系。term[佩尔吉乌斯]的要塞、迷宫层门、以及贵族宅邸的隐私结界都属于此类。",
+    "保罗": {
+      "title": "保罗",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "term[鲁迪乌斯]的父亲，落魄贵族剑士。杂学term[剑神流]、term[水神流]、term[北神流]，在term[菲托亚转移事件]后组织搜索队寻找家人，最终于term[米里斯迷宫攻略]中战死。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
-      "refSources": []
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
     },
-    "重力魔法": {
-      "title": "重力魔法",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "操控重力的古魔法残响，极为稀有。与term[始源魔导具]组合时，可压制龙级生物的行动。",
+    "杰尼斯": {
+      "title": "杰尼斯",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "鲁迪的母亲，原米里斯贵族出身的治愈魔法师。转移后被困于迷宫最深层，直到term[米里斯迷宫攻略]才被救出，却陷入失智。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
-      "refSources": []
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
     },
-    "吐息": {
-      "title": "吐息",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "龙族与部分魔兽的本能魔法，将魔力直接喷为破坏性吐息。term[奥尔斯特德]的龙神之体亦能释放同类权能。",
+    "莉莉娅": {
+      "title": "莉莉娅",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "杰尼斯的侍女，后成为保罗的第二任妻子、term[艾莎]的生母。行事谨慎，对term[鲁迪乌斯]的早慧既敬畏也依赖。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
-      "refSources": []
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "艾莎": {
+      "title": "艾莎",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "保罗与term[莉莉娅]之女，term[鲁迪乌斯]同父异母的妹妹。天资极高、口舌锋利，日后成为鲁迪宅邸的实际管家。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "诺伦": {
+      "title": "诺伦",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "保罗与term[杰尼斯]的女儿，term[鲁迪乌斯]的亲妹妹。性格直、信仰米里斯正教，曾长期无法接受父亲的死与兄长的生活方式。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "基列奴": {
+      "title": "基列奴",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "兽族剑王，term[艾莉丝]的剑术老师，亦是term[保罗]的旧识。独眼、嗅觉极准，转移后与艾莉丝失散，后来在搜索队与死亡行军的交汇中重逢。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "卢德格尔": {
+      "title": "卢德格尔",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "term[苏帕迪亚族]的战士，曾是魔神term[拉普拉斯]的近卫。为洗清族人诅咒而旅行百年，在term[魔大陆]收term[鲁迪乌斯]与term[艾莉丝]为旅伴。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "奥尔斯特德": {
+      "title": "奥尔斯特德",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "当代龙神，term[七大列强]第一位。因term[人神]的诅咒，世人见他会无端生出恐惧与憎恶。与鲁迪订立盟约，对抗人神的布局。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "人神": {
+      "title": "人神",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "存在于人之世界间隙的存在，以「未来的建议」引诱转生者与野心家。与龙神敌对，曾多次借term[鲁迪乌斯]之手试图除掉term[奥尔斯特德]。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "拉普拉斯": {
+      "title": "拉普拉斯",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "魔神与技神的合体残留，term[拉普拉斯战役]的核心。死后力量分裂；其近卫term[卢德格尔]仍在人世行走。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "佩尔吉乌斯": {
+      "title": "佩尔吉乌斯",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "不死的魔导王，term[七大列强]之一，居住于空中要塞。曾与龙神并肩对抗term[拉普拉斯]，对term[鲁迪乌斯]的魔力与战绩抱有兴趣。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "岸里卡": {
+      "title": "岸里卡",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "大魔界王，喜怒无常的小女孩外表。曾将term[恶魔之眼]借给term[鲁迪乌斯]，作为在迷宫与旅途中探路的关键。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "赞恩": {
+      "title": "赞恩",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "term[希龙王国]的第三王子，痴迷于人偶与魔力人偶术。在term[拉诺亚魔法大学]与term[鲁迪乌斯]结为挚友，并参与打造term[魔力铠]。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "艾丽娜莉洁": {
+      "title": "艾丽娜莉洁",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "长寿的冒险者，term[洛琪希]的旧友，克里夫的恋人。以风流闻名，却在关键时刻多次庇护term[格雷拉特家]的后辈。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "亚莉艾尔": {
+      "title": "亚莉艾尔",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "term[阿斯拉王国]第二公主，在政变后流亡。term[希露菲]作为「菲茨」追随她，最终在term[阿斯拉王位继承战]中夺回王位。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "水神蕾达": {
+      "title": "水神蕾达",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "term[水神流]当代宗主，term[七大列强]之一。在term[阿斯拉王位继承战]中作为敌方高战力登场，以奥义「无」著称。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
+    },
+    "剑神加尔": {
+      "title": "剑神加尔",
+      "sourcePath": "词条/角色/人物.md",
+      "description": "term[剑神流]宗主，镇守term[剑之圣域]。好战而直率，term[艾莉丝]曾前往圣域向他发起挑战。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
+      "fieldValues": {},
+      "extraFields": []
     }
   }
 }

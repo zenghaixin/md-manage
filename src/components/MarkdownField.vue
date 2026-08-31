@@ -35,6 +35,12 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
+const bodyStyle = computed(() => {
+  const h = Number(props.minHeight)
+  if (!Number.isFinite(h) || h <= 0) return undefined
+  return { minHeight: `${h}px` }
+})
+
 const viewMode = ref(/** @type {'preview' | 'source'} */ ('preview'))
 const sourceDraft = ref(String(props.modelValue || ''))
 let applying = false
@@ -174,7 +180,8 @@ defineExpose({ flush, toggleView, viewMode })
 
     <div
       class="markdown-field__body"
-      :style="{ minHeight: `${minHeight}px` }"
+      :class="{ 'is-flex-fill': !bodyStyle }"
+      :style="bodyStyle"
     >
       <EditorContent
         v-show="viewMode === 'preview'"
@@ -248,9 +255,15 @@ defineExpose({ flush, toggleView, viewMode })
   overflow: hidden;
 }
 
+/* 不设 min-height 时：完全由 flex 占满剩余高度，避免撑破父级 padding */
+.markdown-field__body.is-flex-fill {
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
 .markdown-field__preview {
   flex: 1 1 auto;
-  min-height: inherit;
+  min-height: 0;
   overflow: auto;
   padding: 0.4rem;
 }

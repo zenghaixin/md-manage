@@ -26,7 +26,16 @@ import {
   resolveRefSlots,
   resolveSourceIdByPath,
 } from '../shared/termRefSlots'
-import TermRefSourcePicker from './TermRefSourcePicker.vue'
+import {
+  TermFieldControl,
+  TermFieldTermRef,
+} from '../fields'
+import {
+  fetchTermSchema,
+  newExtraFieldId,
+  normalizeExtraFields,
+  normalizeFieldValues,
+} from '../shared/termSchema'
 
 const props = defineProps({
   mode: { type: String, default: 'create' },
@@ -40,6 +49,10 @@ const props = defineProps({
   initialRefs: { type: Object, default: () => ({}) },
   /** 编辑时预填各槽位数据源 id */
   initialRefSources: { type: Array, default: () => [] },
+  /** 编辑时预填文件级字段值 */
+  initialFieldValues: { type: Object, default: () => ({}) },
+  /** 编辑时预填本条额外字段 */
+  initialExtraFields: { type: Array, default: () => [] },
   showHeading: { type: Boolean, default: true },
   /** 是否在面板内渲染取消/确认（浮层宿主可改到 footer） */
   showActions: { type: Boolean, default: true },
@@ -76,6 +89,12 @@ const termOptionsByPath = ref({})
 const loadingPaths = ref({})
 /** @type {import('vue').Ref<Array<object>>} */
 const glossaryTreeNodes = ref([])
+/** @type {import('vue').Ref<import('../shared/termSchema').TermSchemaField[]>} */
+const schemaFields = ref([])
+/** @type {import('vue').Ref<import('../shared/termSchema').TermFieldValues>} */
+const fieldValues = ref({})
+/** @type {import('vue').Ref<import('../shared/termSchema').TermExtraField[]>} */
+const extraFields = ref([])
 
 ensureTermGlossaryStyles()
 
@@ -89,6 +108,71 @@ function resolveEntryPathForRefSlots() {
   }
   return normalizeDocPath(
     targetPath.value || props.initialTargetPath || GLOSSARY_DEFAULT_FILE,
+  )
+}
+
+function initFieldValuesFromProps() {
+  fieldValues.value = normalizeFieldValues(
+    props.initialFieldValues,
+    schemaFields.value,
+  )
+  extraFields.value = normalizeExtraFields(props.initialExtraFields).map(
+    (f) => ({ ...f }),
+  )
+}
+
+async function loadSchemaForEntry() {
+  const path = resolveEntryPathForRefSlots()
+  if (!path) {
+    schemaFields.value = []
+    return
+  }
+  try {
+    const data = await fetchTermSchema(path)
+    schemaFields.value = data.schema.fields
+    // 仅补齐缺省 key，不覆盖已有输入
+    const next = { ...fieldValues.value }
+    for (const field of schemaFields.value) {
+      if (Object.prototype.hasOwnProperty.call(next, field.key)) continue
+      next[field.key] = field.type === 'term' ? [] : ''
+    }
+    fieldValues.value = normalizeFieldValues(next, schemaFields.value)
+  } catch (err) {
+    console.warn('[term-editor] load schema failed:', err)
+    schemaFields.value = []
+  }
+}
+
+function updateFieldValue(key, value) {
+  fieldValues.value = {
+    ...fieldValues.value,
+    [key]: value,
+  }
+}
+
+function fieldValueOf(key) {
+  return fieldValues.value[key]
+}
+
+function addExtraField() {
+  extraFields.value = [
+    ...extraFields.value,
+    {
+      id: newExtraFieldId(),
+      label: '自定义字段',
+      type: 'text',
+      value: '',
+    },
+  ]
+}
+
+function removeExtraField(id) {
+  extraFields.value = extraFields.value.filter((f) => f.id !== id)
+}
+
+function updateExtraField(id, patch) {
+  extraFields.value = extraFields.value.map((f) =>
+    f.id === id ? { ...f, ...patch } : f,
   )
 }
 
@@ -315,6 +399,8 @@ onMounted(async () => {
   void loadGlossaryTree()
   await loadGlossaryIndexData()
   initSlotValuesFromProps()
+  initFieldValuesFromProps()
+  await loadSchemaForEntry()
   void refreshAllSlotOptions(true)
 })
 
@@ -327,11 +413,25 @@ watch(
 
 watch(
   () => targetPath.value,
-  () => {
+  async () => {
     if (props.mode !== 'create' || !glossaryIndexEntries.value.length) return
     initSlotValuesFromProps()
+    await loadSchemaForEntry()
     void refreshAllSlotOptions(true)
   },
+)
+
+watch(
+  () => [
+    props.initialFieldValues,
+    props.initialExtraFields,
+    props.initialSourcePath,
+  ],
+  async () => {
+    initFieldValuesFromProps()
+    await loadSchemaForEntry()
+  },
+  { deep: true },
 )
 
 const emit = defineEmits(['update:ui'])
@@ -397,6 +497,8 @@ async function confirm() {
         ? normalizeTermRefs(slotValues.value, refSources)
         : undefined,
       refSources: refSources.length ? refSources : undefined,
+      fieldValues: normalizeFieldValues(fieldValues.value, schemaFields.value),
+      extraFields: normalizeExtraFields(extraFields.value),
     })
   } finally {
     busy.value = false
@@ -418,116 +520,164 @@ defineExpose({
 </script>
 
 <template>
-  <div class="ext-term-editor-panel flex h-full min-h-0 flex-col gap-3 p-3">
+  <div class="ext-term-editor-panel flex h-full min-h-0 w-full flex-col overflow-x-hidden overflow-y-auto">
+    <!--
+      grow + shrink-0 + basis auto：矮时被拉满（描述 flex-1 才有剩余空间），
+      高时不压缩，由本层滚动。
+      不要 min-h-full：min-height 在 Chromium 里不是确定高度，子项 flex-1 分不到空。
+      不要 flex-1（basis 0%）：会从 0 长到父级高度，min-height:auto 在滚动 flex 里常被当成 0。
+    -->
+    <div class="flex grow shrink-0 flex-col gap-3 p-3">
     <div
       v-if="showHeading"
       class="ext-term-editor-panel__head shrink-0"
     >
-      <h3 class="m-0 text-sm font-semibold">{{ heading }}</h3>
-    </div>
+        <h3 class="m-0 text-sm font-semibold">{{ heading }}</h3>
+      </div>
 
-    <label
-      v-if="mode === 'create'"
-      class="ext-term-editor-field shrink-0"
-    >
-      <span class="ext-term-editor-label">存储位置</span>
-      <select v-model="targetPath" class="ext-term-editor-input">
-        <option
-          v-for="opt in entryOptions"
-          :key="opt.path"
-          :value="opt.path"
-        >
-          {{ opt.label }}（{{ opt.path }}）
-        </option>
-      </select>
-    </label>
-
-    <label class="ext-term-editor-field shrink-0">
-      <span class="ext-term-editor-label">标题</span>
-      <input
-        v-model="title"
-        class="ext-term-editor-input"
-        type="text"
-        placeholder="词条标题"
-        maxlength="80"
+      <label
+        v-if="mode === 'create'"
+        class="ext-term-editor-field shrink-0"
       >
-    </label>
+        <span class="ext-term-editor-label">存储位置</span>
+        <select v-model="targetPath" class="ext-term-editor-input">
+          <option
+            v-for="opt in entryOptions"
+            :key="opt.path"
+            :value="opt.path"
+          >
+            {{ opt.label }}（{{ opt.path }}）
+          </option>
+        </select>
+      </label>
 
-    <div
-      v-if="refSlotDefs.length"
-      class="ext-term-ref-slots shrink-0"
-    >
+      <label class="ext-term-editor-field shrink-0">
+        <span class="ext-term-editor-label">标题</span>
+        <input
+          v-model="title"
+          class="ext-term-editor-input"
+          type="text"
+          placeholder="词条标题"
+          maxlength="80"
+        >
+      </label>
+
       <div
-        v-for="slot in refSlotDefs"
-        :key="slot.id"
-        class="ext-term-ref-slot-row"
+        v-if="refSlotDefs.length"
+        class="ext-term-ref-slots shrink-0"
       >
-        <span
-          class="ext-term-ref-slot-label"
-          :class="{ 'is-deleted': slot.deleted }"
-        >{{ slot.name }}</span>
-        <el-select
-          :key="`${slot.id}:${slot.path}`"
+        <TermFieldTermRef
+          v-for="slot in refSlotDefs"
+          :key="slot.id"
+          :label="slot.name"
+          :label-deleted="slot.deleted"
           :model-value="slotValueList(slot.id)"
-          class="ext-term-ref-slot-select"
-          multiple
-          collapse-tags
-          collapse-tags-tooltip
-          filterable
-          clearable
-          teleported
-          popper-class="ext-term-ref-select-popper"
-          :disabled="slot.deleted"
-          :loading="isSlotLoading(slot.id)"
-          :placeholder="slot.deleted ? '来源已删除' : isSlotLoading(slot.id) ? '加载中…' : '选择词条'"
-          @update:model-value="updateSlotValue(slot.id, $event)"
-        >
-          <el-option
-            v-for="opt in slotOptionsMap[slot.id] || []"
-            :key="`${slot.id}:${opt}`"
-            :label="opt"
-            :value="opt"
-          />
-        </el-select>
-        <TermRefSourcePicker
-          :model-value="slot.path"
+          :source-path="slot.path"
           :nodes="glossaryTreeNodes"
-          @update:model-value="onSlotSourceChange(slot.id, $event)"
+          :disabled="slot.deleted"
+          :placeholder="slot.deleted ? '来源已删除' : '选择词条'"
+          @update:model-value="updateSlotValue(slot.id, $event)"
+          @update:source-path="onSlotSourceChange(slot.id, $event)"
         />
       </div>
-    </div>
 
-    <MarkdownField
-      ref="mdFieldRef"
-      v-model="description"
-      class="min-h-0 flex-1"
-      term-ref
-      :host-term-title="title"
-      :show-toggle="showDescToggle"
-      placeholder="词条描述（Markdown）"
-      :min-height="160"
-    />
+      <div
+        v-if="schemaFields.length"
+        class="ext-term-schema-fields shrink-0"
+      >
+        <div class="ext-term-schema-fields__title">基础字段</div>
+        <label
+          v-for="field in schemaFields"
+          :key="field.key"
+          class="ext-term-editor-field"
+        >
+          <span class="ext-term-editor-label">{{ field.label }}</span>
+          <TermFieldControl
+            :kind="field.type || 'text'"
+            :model-value="fieldValueOf(field.key)"
+            :source-path="field.sourcePath || ''"
+            :nodes="glossaryTreeNodes"
+            :host-term-title="title"
+            :placeholder="field.label"
+            :show-source-picker="false"
+            :min-height="140"
+            @update:model-value="updateFieldValue(field.key, $event)"
+          />
+        </label>
+      </div>
 
-    <div
-      v-if="showActions"
-      class="ext-term-editor-actions shrink-0 flex gap-2 justify-end"
-    >
-      <button
-        type="button"
-        class="ext-term-editor-btn"
-        :disabled="busy"
-        @click="cancel"
+      <div class="ext-term-extra-fields shrink-0">
+        <div class="ext-term-schema-fields__head">
+          <span class="ext-term-schema-fields__title">本条额外字段</span>
+          <button
+            type="button"
+            class="ext-term-extra-add"
+            @click="addExtraField"
+          >
+            添加
+          </button>
+        </div>
+        <div
+          v-for="extra in extraFields"
+          :key="extra.id"
+          class="ext-term-extra-row"
+        >
+          <input
+            class="ext-term-editor-input"
+            :value="extra.label"
+            placeholder="字段名"
+            @input="updateExtraField(extra.id, { label: $event.target.value })"
+          >
+          <input
+            class="ext-term-editor-input"
+            :value="Array.isArray(extra.value) ? extra.value.join('，') : extra.value"
+            placeholder="内容"
+            @input="updateExtraField(extra.id, { value: $event.target.value })"
+          >
+          <button
+            type="button"
+            class="ext-term-extra-remove"
+            @click="removeExtraField(extra.id)"
+          >
+            删
+          </button>
+        </div>
+      </div>
+
+      <div class="flex min-h-[160px] flex-1 flex-col">
+        <MarkdownField
+          ref="mdFieldRef"
+          v-model="description"
+          class="h-full min-h-0 flex-1"
+          term-ref
+          :host-term-title="title"
+          :show-toggle="showDescToggle"
+          placeholder="词条描述（Markdown）"
+          :min-height="0"
+        />
+      </div>
+
+      <div
+        v-if="showActions"
+        class="ext-term-editor-actions shrink-0 flex gap-2 justify-end"
       >
-        取消
-      </button>
-      <button
-        type="button"
-        class="ext-term-editor-btn is-primary"
-        :disabled="!canSubmit"
-        @click="confirm"
-      >
+        <button
+          type="button"
+          class="ext-term-editor-btn"
+          :disabled="busy"
+          @click="cancel"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="ext-term-editor-btn is-primary"
+          :disabled="!canSubmit"
+          @click="confirm"
+        >
         确认
       </button>
+    </div>
     </div>
   </div>
 </template>
@@ -586,26 +736,53 @@ defineExpose({
   gap: 0.5rem;
 }
 
-.ext-term-ref-slot-row {
-  display: grid;
-  grid-template-columns: 3rem minmax(0, 1fr) 5.5rem;
+.ext-term-schema-fields,
+.ext-term-extra-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ext-term-schema-fields__head {
+  display: flex;
   align-items: center;
-  gap: 0.35rem 0.45rem;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
-.ext-term-ref-slot-label.is-deleted {
-  color: #c45656;
-}
-
-.ext-term-ref-slot-label {
-  font-size: 0.75rem;
+.ext-term-schema-fields__title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted, #5a6b75);
-  padding-top: 0.35rem;
 }
 
-.ext-term-ref-slot-select {
-  width: 100%;
-  min-width: 0;
+.ext-term-extra-row {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr) auto;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.ext-term-extra-add,
+.ext-term-extra-remove {
+  margin: 0;
+  padding: 0.2rem 0.45rem;
+  border: none;
+  background: transparent;
+  color: var(--muted, #5a6b75);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.ext-term-extra-add:hover {
+  color: var(--accent, #0d6e6e);
+}
+
+.ext-term-extra-remove:hover {
+  color: var(--danger, #b42318);
 }
 </style>
 

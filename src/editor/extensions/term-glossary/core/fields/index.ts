@@ -1,0 +1,7 @@
+export { TERM_FIELD_KIND_OPTIONS, fieldKindLabel, isTermFieldKind } from './kinds'
+export type { TermFieldKind } from './kinds'
+export { default as TermFieldText } from './TermFieldText.vue'
+export { default as TermFieldMarkdown } from './TermFieldMarkdown.vue'
+export { default as TermFieldTermRef } from './TermFieldTermRef.vue'
+export { default as TermFieldControl } from './TermFieldControl.vue'
+export { default as GlossaryFieldKindPicker } from './GlossaryFieldKindPicker.vue'

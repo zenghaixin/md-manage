@@ -712,6 +712,43 @@ app.get('/api/glossary/index', async (_req, res) => {
   }
 })
 
+/** 入口文件字段模板（文件级 schema） */
+app.get('/api/glossary/schema', async (req, res) => {
+  try {
+    const sourcePath = fsTree.normRel(String(req.query?.path ?? ''))
+    if (!sourcePath || !sourcePath.endsWith('.md')) {
+      return res.status(400).json({ error: 'path 格式错误' })
+    }
+    if (!fsTree.isGlossaryDefPath(sourcePath)) {
+      return res.status(400).json({ error: '仅词条目录下的入口文件可配置字段模板' })
+    }
+    await fsTree.ensureGlossarySystem()
+    res.json(await glossaryStore.readSchemaByPath(sourcePath))
+  } catch (err) {
+    const status = err.status || 500
+    res.status(status).json({ error: err.message })
+  }
+})
+
+app.put('/api/glossary/schema', async (req, res) => {
+  try {
+    const sourcePath = fsTree.normRel(String(req.body?.path ?? ''))
+    if (!sourcePath || !sourcePath.endsWith('.md')) {
+      return res.status(400).json({ error: 'path 格式错误' })
+    }
+    if (!fsTree.isGlossaryDefPath(sourcePath)) {
+      return res.status(400).json({ error: '仅词条目录下的入口文件可配置字段模板' })
+    }
+    await fsTree.ensureGlossarySystem()
+    res.json(
+      await glossaryStore.writeSchemaByPath(sourcePath, req.body?.schema || {}),
+    )
+  } catch (err) {
+    const status = err.status || 500
+    res.status(status).json({ error: err.message })
+  }
+})
+
 /** 指定词条入口 md 下的定义块标题列表（引用槽位下拉） */
 app.get('/api/glossary/file-terms', async (req, res) => {
   try {
@@ -781,6 +818,11 @@ app.put('/api/glossary', async (req, res) => {
           normalizeRefSources(term?.refSources),
         ),
         refSources: normalizeRefSources(term?.refSources),
+        fieldValues:
+          term?.fieldValues && typeof term.fieldValues === 'object'
+            ? term.fieldValues
+            : {},
+        extraFields: Array.isArray(term?.extraFields) ? term.extraFields : [],
       }
     }
     res.json(await writeGlossaryFile({ terms: normalized }))
@@ -826,7 +868,7 @@ app.patch('/api/glossary/file', async (req, res) => {
     const data = await readGlossaryFile()
     const lookup = glossaryLookupFrom(data)
     const nextTerms = { ...data.terms }
-    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[], refs: Record<string, string[]>, refSources: string[] }>} */
+    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[], refs: Record<string, string[]>, refSources: string[], fieldValues: object, extraFields: object[] }>} */
     const preserved = {}
 
     for (const [key, term] of Object.entries(nextTerms)) {
@@ -840,6 +882,11 @@ app.patch('/api/glossary/file', async (req, res) => {
           ),
           refs: normalizeTermRefsForLookup(term.refs, refSources, lookup),
           refSources,
+          fieldValues:
+            term.fieldValues && typeof term.fieldValues === 'object'
+              ? term.fieldValues
+              : {},
+          extraFields: Array.isArray(term.extraFields) ? term.extraFields : [],
         }
         delete nextTerms[key]
       }
@@ -897,10 +944,20 @@ app.patch('/api/glossary/file', async (req, res) => {
           lookup,
         ),
         refSources,
+        fieldValues:
+          fromPrev?.fieldValues ||
+          fromData?.fieldValues ||
+          fromOld?.fieldValues ||
+          {},
+        extraFields:
+          fromPrev?.extraFields ||
+          fromData?.extraFields ||
+          fromOld?.extraFields ||
+          [],
       }
     }
 
-    // 与 PUT /api/glossary 并发时：若磁盘上已有引用槽位，避免 PATCH 晚到把它抹掉
+    // 与 PUT /api/glossary 并发时：若磁盘上已有引用槽位 / 字段值，避免 PATCH 晚到把它抹掉
     const latestData = await readGlossaryFile()
     const latestLookup = glossaryLookupFrom(latestData)
     for (const title of newTitles) {
@@ -934,6 +991,21 @@ app.patch('/api/glossary/file', async (req, res) => {
             latestRefSources,
             latestLookup,
           ),
+        }
+      }
+      const latestHasFields =
+        Object.keys(latestTerm.fieldValues || {}).length > 0 ||
+        (Array.isArray(latestTerm.extraFields) && latestTerm.extraFields.length > 0)
+      const nextHasFields =
+        Object.keys(nextTerm.fieldValues || {}).length > 0 ||
+        (Array.isArray(nextTerm.extraFields) && nextTerm.extraFields.length > 0)
+      if (latestHasFields && !nextHasFields) {
+        nextTerms[title] = {
+          ...nextTerms[title],
+          fieldValues: latestTerm.fieldValues || {},
+          extraFields: Array.isArray(latestTerm.extraFields)
+            ? latestTerm.extraFields
+            : [],
         }
       }
     }

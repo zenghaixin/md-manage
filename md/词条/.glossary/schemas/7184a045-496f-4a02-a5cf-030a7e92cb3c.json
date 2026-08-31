@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "fields": [
+    {
+      "key": "新字段",
+      "label": "新字段",
+      "type": "text"
+    },
+    {
+      "key": "新字段_2",
+      "label": "新字段",
+      "type": "term"
+    }
+  ]
+}

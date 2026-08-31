@@ -30,6 +30,13 @@ export interface ResolvedTerm {
   sourcePath: string
   /** 定义块整块备注 id；当前文档有节点时才能解析 */
   remarkId: string
+  fieldValues?: Record<string, string | string[]>
+  extraFields?: Array<{
+    id: string
+    label: string
+    type: string
+    value: string | string[]
+  }>
 }
 
 export type OpenSourceFn = (path: string, focusTermTitle?: string) => void
@@ -72,6 +79,8 @@ export function resolveTerm(
         description: liveMd || peeledStore.description || '',
         sourcePath: term.sourcePath || '',
         remarkId: remarkId || peeledStore.remarkId,
+        fieldValues: term.fieldValues || {},
+        extraFields: term.extraFields || [],
       }
     }
   } catch {
@@ -83,6 +92,8 @@ export function resolveTerm(
     description: liveMd || '',
     sourcePath: '',
     remarkId,
+    fieldValues: {},
+    extraFields: [],
   }
 }
 

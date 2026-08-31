@@ -7,6 +7,8 @@ import { glossaryEntryLabel } from '../shared/glossaryPaths'
 const props = defineProps({
   nodes: { type: Array, default: () => [] },
   modelValue: { type: String, default: '' },
+  /** 全宽按钮（通用字段侧栏等）；默认窄按钮适配引用槽行 */
+  block: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -22,7 +24,7 @@ const popperOptions = ref({})
 
 const buttonLabel = computed(() => {
   const path = String(props.modelValue || '').trim()
-  if (!path) return '选择文件'
+  if (!path) return props.block ? '选择词条来源文件' : '选择文件'
   return glossaryEntryLabel(path) || path.split('/').pop()?.replace(/\.md$/i, '') || path
 })
 
@@ -30,6 +32,8 @@ function resolveBoundary(buttonEl) {
   if (!buttonEl) return null
   return (
     buttonEl.closest('.ext-term-editor-panel') ||
+    buttonEl.closest('.glossary-schema-side-panel') ||
+    buttonEl.closest('.glossary-schema-editor') ||
     buttonEl.closest('.ext-term-ref-slot-row') ||
     buttonEl.parentElement
   )
@@ -100,43 +104,60 @@ function onSelect(path) {
 </script>
 
 <template>
-  <el-popover
-    v-model:visible="open"
-    :placement="placement"
-    :fallback-placements="BOTTOM_FALLBACKS"
-    :popper-options="popperOptions"
-    :width="POPOVER_WIDTH"
-    trigger="manual"
-    :teleported="true"
-    popper-class="ext-term-ref-source-popover"
+  <div
+    class="ext-term-ref-source-picker"
+    :class="{ 'is-block': block }"
   >
-    <template #reference>
-      <button
-        ref="buttonRef"
-        type="button"
-        class="ext-term-ref-source-btn"
-        :title="modelValue || '选择词条来源文件'"
-        @click="toggleOpen"
-      >
-        <AppIcon name="file" :size="13" class="ext-term-ref-source-btn__icon" />
-        <span class="ext-term-ref-source-btn__label">{{ buttonLabel }}</span>
-        <AppIcon
-          name="chevronRight"
-          :size="12"
-          class="ext-term-ref-source-btn__chevron"
-          :class="{ 'is-open': open }"
-        />
-      </button>
-    </template>
-    <TermRefSourceTreePanel
-      :nodes="nodes"
-      :model-value="modelValue"
-      @select="onSelect"
-    />
-  </el-popover>
+    <el-popover
+      v-model:visible="open"
+      :placement="placement"
+      :fallback-placements="BOTTOM_FALLBACKS"
+      :popper-options="popperOptions"
+      :width="POPOVER_WIDTH"
+      trigger="manual"
+      :teleported="true"
+      popper-class="ext-term-ref-source-popover"
+    >
+      <template #reference>
+        <button
+          ref="buttonRef"
+          type="button"
+          class="ext-term-ref-source-btn"
+          :class="{ 'is-block': block }"
+          :title="modelValue || '选择词条来源文件'"
+          @click="toggleOpen"
+        >
+          <AppIcon name="file" :size="13" class="ext-term-ref-source-btn__icon" />
+          <span class="ext-term-ref-source-btn__label">{{ buttonLabel }}</span>
+          <AppIcon
+            name="chevronRight"
+            :size="12"
+            class="ext-term-ref-source-btn__chevron"
+            :class="{ 'is-open': open }"
+          />
+        </button>
+      </template>
+      <TermRefSourceTreePanel
+        :nodes="nodes"
+        :model-value="modelValue"
+        @select="onSelect"
+      />
+    </el-popover>
+  </div>
 </template>
 
 <style scoped>
+.ext-term-ref-source-picker.is-block {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.ext-term-ref-source-picker.is-block :deep(.el-tooltip__trigger) {
+  display: block;
+  width: 100%;
+}
+
 .ext-term-ref-source-btn {
   display: inline-flex;
   align-items: center;
@@ -160,16 +181,26 @@ function onSelect(path) {
   border-color: color-mix(in srgb, var(--accent, #0d6e6e) 45%, var(--border, #c5d0d8));
 }
 
+.ext-term-ref-source-btn.is-block {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  font-size: 0.8125rem;
+  padding: 0.4rem 0.55rem;
+}
+
 .ext-term-ref-source-btn__icon {
   flex-shrink: 0;
   color: var(--muted, #5a6b75);
 }
 
 .ext-term-ref-source-btn__label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
 }
 
 .ext-term-ref-source-btn__chevron {

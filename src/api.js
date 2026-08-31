@@ -145,6 +145,15 @@ export const api = {
     request(
       `/api/glossary/file-terms?path=${encodeURIComponent(String(pathRel || ''))}`,
     ),
+  getGlossarySchema: (pathRel) =>
+    request(
+      `/api/glossary/schema?path=${encodeURIComponent(String(pathRel || ''))}`,
+    ),
+  putGlossarySchema: (pathRel, schema) =>
+    request('/api/glossary/schema', {
+      method: 'PUT',
+      body: JSON.stringify({ path: pathRel, schema }),
+    }),
   putGlossary: (body) =>
     request('/api/glossary', { method: 'PUT', body: JSON.stringify(body) }),
   syncGlossary: () => request('/api/glossary/sync', { method: 'POST' }),

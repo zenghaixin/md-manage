@@ -19,6 +19,8 @@ const props = defineProps({
   initialSourcePath: { type: String, default: '' },
   initialRefs: { type: Object, default: () => ({}) },
   initialRefSources: { type: Array, default: () => [] },
+  initialFieldValues: { type: Object, default: () => ({}) },
+  initialExtraFields: { type: Array, default: () => [] },
   remarkId: { type: String, default: '' },
   floatLeft: { type: Number, default: null },
   floatTop: { type: Number, default: null },
@@ -124,6 +126,8 @@ defineExpose({
 <template>
   <DraggableFloat
     ref="floatRef"
+    root-class="ext-term-editor-float-host"
+    body-class="ext-term-editor-float-body"
     :title="floatTitle"
     :width="520"
     :height="620"
@@ -144,6 +148,8 @@ defineExpose({
       :initial-source-path="initialSourcePath"
       :initial-refs="initialRefs"
       :initial-ref-sources="initialRefSources"
+      :initial-field-values="initialFieldValues"
+      :initial-extra-fields="initialExtraFields"
       :show-heading="false"
       :show-actions="false"
       :show-desc-toggle="false"
@@ -197,6 +203,24 @@ defineExpose({
     </template>
   </DraggableFloat>
 </template>
+
+<!-- 非 scoped：保证挂到 DraggableFloat 内部节点上一定生效 -->
+<style>
+.draggable-float.ext-term-editor-float-host .ext-term-editor-float-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.draggable-float.ext-term-editor-float-host .ext-term-editor-panel {
+  flex: 1 1 0%;
+  min-height: 0;
+  width: 100%;
+}
+</style>
 
 <style scoped>
 .ext-term-editor-float-footer {
