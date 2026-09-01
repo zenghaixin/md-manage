@@ -187,6 +187,7 @@ export function createGlossaryStore(docsRoot, deps) {
       if (!order || !sourcePath) continue
 
       const prevMeta = prevByPath.get(sourcePath)
+      const isNewEntry = !prevMeta
       const id = prevMeta?.id || generateEntryId()
       const fileName =
         String(prevMeta?.fileName || '').trim() || fileNameFromPath(sourcePath)
@@ -197,6 +198,16 @@ export function createGlossaryStore(docsRoot, deps) {
       ])
       await writeEntryFile(order, payload, sourcePath, lookup)
       nextEntries.push({ id, order, path: sourcePath, fileName })
+      if (isNewEntry) {
+        try {
+          await schemaStore.ensureDefaultSchema(id)
+        } catch (err) {
+          console.warn(
+            '[glossary] ensure default schema failed:',
+            err?.message || err,
+          )
+        }
+      }
     }
 
     let diskFiles = []
@@ -214,6 +225,16 @@ export function createGlossaryStore(docsRoot, deps) {
         } catch {
           // ignore
         }
+      }
+    }
+
+    const keptIds = new Set(nextEntries.map((e) => e.id))
+    for (const e of prev.entries) {
+      if (keptIds.has(e.id)) continue
+      try {
+        await schemaStore.deleteSchema(e.id)
+      } catch (err) {
+        console.warn('[glossary] delete schema failed:', err?.message || err)
       }
     }
 
@@ -394,7 +415,9 @@ export function createGlossaryStore(docsRoot, deps) {
     if (!entry) {
       throw Object.assign(new Error('入口文件不在词条索引中'), { status: 404 })
     }
-    const schema = await schemaStore.readSchema(entry.id)
+    // 读取前补齐默认模板，避免新建后右栏仍显示「尚未配置字段」
+    const seeded = await schemaStore.ensureDefaultSchema(entry.id)
+    const schema = seeded || (await schemaStore.readSchema(entry.id))
     return {
       entryId: entry.id,
       path: entry.path,

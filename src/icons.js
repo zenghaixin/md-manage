@@ -25,6 +25,9 @@ export const icons = {
   chevronRight: 'lucide:chevron-right',
   close: 'lucide:x',
   plus: 'lucide:plus',
+  restore: 'lucide:rotate-ccw',
+  /** 列表拖拽手柄 */
+  grip: 'mdi:drag',
 }
 
 /** @typedef {keyof typeof icons} AppIconName */

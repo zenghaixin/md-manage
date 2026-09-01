@@ -24,7 +24,7 @@ const popperOptions = ref({})
 
 const buttonLabel = computed(() => {
   const path = String(props.modelValue || '').trim()
-  if (!path) return props.block ? '选择词条来源文件' : '选择文件'
+  if (!path) return '引用来源'
   return glossaryEntryLabel(path) || path.split('/').pop()?.replace(/\.md$/i, '') || path
 })
 
@@ -124,7 +124,7 @@ function onSelect(path) {
           type="button"
           class="ext-term-ref-source-btn"
           :class="{ 'is-block': block }"
-          :title="modelValue || '选择词条来源文件'"
+          :title="modelValue || '引用来源'"
           @click="toggleOpen"
         >
           <AppIcon name="file" :size="13" class="ext-term-ref-source-btn__icon" />
@@ -162,18 +162,20 @@ function onSelect(path) {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  width: 5.5rem;
-  min-width: 5.5rem;
-  max-width: 5.5rem;
+  width: 7.25rem;
+  min-width: 7.25rem;
+  max-width: 7.25rem;
   box-sizing: border-box;
   margin: 0;
-  padding: 0.35rem 0.4rem;
+  padding: 0.45rem 0.55rem;
   border: 1px solid var(--border, #c5d0d8);
   border-radius: 6px;
   background: var(--surface, #f4f7f9);
   color: inherit;
   font: inherit;
-  font-size: 0.6875rem;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  min-height: calc(0.8125rem * 1.25 + 0.9rem + 2px);
   cursor: pointer;
 }
 
@@ -185,8 +187,6 @@ function onSelect(path) {
   width: 100%;
   min-width: 0;
   max-width: none;
-  font-size: 0.8125rem;
-  padding: 0.4rem 0.55rem;
 }
 
 .ext-term-ref-source-btn__icon {

@@ -7,12 +7,6 @@
       "type": "text"
     },
     {
-      "key": "角色",
-      "label": "角色关系",
-      "type": "term",
-      "sourcePath": "词条/角色/人物.md"
-    },
-    {
       "key": "备注",
       "label": "备注",
       "type": "markdown"

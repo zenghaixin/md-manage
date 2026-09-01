@@ -32,7 +32,7 @@ const props = defineProps({
 
 const floatRef = ref(null)
 const panelRef = ref(null)
-const ui = ref({ canSubmit: false, busy: false })
+const ui = ref({ canSubmit: false, busy: false, showDescSourceToggle: true })
 const descIsSource = ref(false)
 const liveRemarkId = ref(String(props.remarkId || '').trim())
 
@@ -66,6 +66,7 @@ function onUi(next) {
   ui.value = {
     canSubmit: !!next?.canSubmit,
     busy: !!next?.busy,
+    showDescSourceToggle: next?.showDescSourceToggle !== false,
   }
 }
 
@@ -161,6 +162,7 @@ defineExpose({
       <div class="ext-term-editor-float-footer">
         <div class="ext-term-editor-float-tools">
           <button
+            v-if="ui.showDescSourceToggle"
             type="button"
             class="ext-term-popover-tool"
             :class="{ 'is-active': descIsSource }"

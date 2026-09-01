@@ -123,7 +123,7 @@ function onSource(path) {
 }
 
 .term-field-term-ref.has-picker {
-  grid-template-columns: minmax(0, 1fr) 5.5rem;
+  grid-template-columns: minmax(0, 1fr) 7.25rem;
 }
 
 .term-field-term-ref.has-label {
@@ -131,15 +131,20 @@ function onSource(path) {
 }
 
 .term-field-term-ref.has-label.has-picker {
-  grid-template-columns: auto minmax(0, 1fr) 5.5rem;
+  grid-template-columns: auto minmax(0, 1fr) 7.25rem;
 }
 
 .term-field-term-ref.has-picker :deep(.ext-term-ref-source-picker),
 .term-field-term-ref.has-picker :deep(.ext-term-ref-source-picker .el-tooltip__trigger) {
-  width: 5.5rem;
-  min-width: 5.5rem;
-  max-width: 5.5rem;
+  width: 7.25rem;
+  min-width: 7.25rem;
+  max-width: 7.25rem;
+  height: 100%;
   box-sizing: border-box;
+}
+
+.term-field-term-ref.has-picker :deep(.ext-term-ref-source-btn) {
+  height: 100%;
 }
 
 .term-field-term-ref__label {

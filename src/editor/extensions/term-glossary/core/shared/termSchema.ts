@@ -42,6 +42,36 @@ export function emptyTermSchema(): TermFileSchema {
   return { version: 1, fields: [] }
 }
 
+/** 通用字段默认模板：标题 + 备注 */
+export function defaultTermSchemaFields(): TermSchemaField[] {
+  return [
+    { key: '标题', label: '标题', type: 'text' },
+    { key: '备注', label: '备注', type: 'markdown' },
+  ]
+}
+
+/** 是否映射到词条标题 */
+export function isTitleSchemaField(field: { key?: string; label?: string; type?: string } | null | undefined): boolean {
+  if (!field || field.type === 'term' || field.type === 'markdown') return false
+  const key = String(field.key || '').trim()
+  const label = String(field.label || '').trim()
+  return key === '标题' || key === 'title' || label === '标题'
+}
+
+/** 是否映射到词条描述/备注 */
+export function isRemarkSchemaField(field: { key?: string; label?: string; type?: string } | null | undefined): boolean {
+  if (!field || field.type !== 'markdown') return false
+  const key = String(field.key || '').trim()
+  const label = String(field.label || '').trim()
+  return (
+    key === '备注' ||
+    key === 'remark' ||
+    key === 'description' ||
+    label === '备注' ||
+    label === '描述'
+  )
+}
+
 /** @deprecated 使用 type === 'term'；保留兼容旧调用 */
 export function isSchemaTermRef(field: { type?: string; sourcePath?: string } | null | undefined): boolean {
   if (!field) return false
@@ -226,5 +256,8 @@ export function localPresetSchema(name: string): TermFileSchema {
     ],
   }
   const fields = map[String(name || '').trim()]
-  return fields ? { version: 1, fields: [...fields] } : emptyTermSchema()
+  return fields ? { version: 1, fields: [...fields] } : {
+    version: 1,
+    fields: defaultTermSchemaFields(),
+  }
 }

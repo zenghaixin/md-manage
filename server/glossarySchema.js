@@ -46,6 +46,17 @@ export function emptySchema() {
   return { version: SCHEMA_VERSION, fields: [] }
 }
 
+/** 新入口文件默认通用字段：标题 + 备注 */
+export function defaultSchema() {
+  return normalizeSchema({
+    version: SCHEMA_VERSION,
+    fields: [
+      { key: '标题', label: '标题', type: 'text' },
+      { key: '备注', label: '备注', type: 'markdown' },
+    ],
+  })
+}
+
 function normalizeSourcePath(raw) {
   return String(raw || '')
     .replace(/\\/g, '/')
@@ -93,7 +104,7 @@ export function presetByFileName(fileName) {
     .replace(/\.md$/i, '')
     .trim()
   const fields = SCHEMA_PRESETS[name]
-  if (!fields) return emptySchema()
+  if (!fields) return defaultSchema()
   return normalizeSchema({ version: SCHEMA_VERSION, fields })
 }
 
@@ -122,7 +133,7 @@ export function createSchemaStore(metaAbs) {
       const raw = await fs.readFile(schemaAbs(id), 'utf-8')
       return normalizeSchema(JSON.parse(raw || '{}'))
     } catch (err) {
-      if (err.code === 'ENOENT') return emptySchema()
+      if (err.code === 'ENOENT') return defaultSchema()
       throw err
     }
   }
@@ -140,6 +151,20 @@ export function createSchemaStore(metaAbs) {
     return payload
   }
 
+  /** 新入口：无文件或空 fields 时写入标题+备注默认模板 */
+  async function ensureDefaultSchema(entryId) {
+    const id = String(entryId || '').trim()
+    if (!id) return null
+    try {
+      const raw = await fs.readFile(schemaAbs(id), 'utf-8')
+      const current = normalizeSchema(JSON.parse(raw || '{}'))
+      if (current.fields.length > 0) return null
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err
+    }
+    return writeSchema(id, defaultSchema())
+  }
+
   async function deleteSchema(entryId) {
     const id = String(entryId || '').trim()
     if (!id) return
@@ -153,8 +178,10 @@ export function createSchemaStore(metaAbs) {
   return {
     readSchema,
     writeSchema,
+    ensureDefaultSchema,
     deleteSchema,
     emptySchema,
+    defaultSchema,
     normalizeSchema,
     presetByFileName,
     listPresetNames,

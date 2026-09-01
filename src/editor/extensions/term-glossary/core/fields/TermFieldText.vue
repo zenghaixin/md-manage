@@ -34,6 +34,8 @@ defineEmits(['update:modelValue'])
   color: var(--ink, #1a2830);
   font: inherit;
   font-size: 0.8125rem;
+  line-height: 1.25;
+  min-height: calc(0.8125rem * 1.25 + 0.9rem + 2px);
 }
 
 .term-field-text:disabled {

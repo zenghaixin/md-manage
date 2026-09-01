@@ -32,7 +32,8 @@ import {
 } from '../fields'
 import {
   fetchTermSchema,
-  newExtraFieldId,
+  isRemarkSchemaField,
+  isTitleSchemaField,
   normalizeExtraFields,
   normalizeFieldValues,
 } from '../shared/termSchema'
@@ -144,37 +145,53 @@ async function loadSchemaForEntry() {
 }
 
 function updateFieldValue(key, value) {
+  const field = schemaFields.value.find((f) => f.key === key)
+  if (field && isTitleSchemaField(field)) {
+    title.value = Array.isArray(value) ? value.join('，') : String(value ?? '')
+  } else if (field && isRemarkSchemaField(field)) {
+    description.value = Array.isArray(value) ? value.join('，') : String(value ?? '')
+  }
   fieldValues.value = {
     ...fieldValues.value,
     [key]: value,
   }
 }
 
+function onFieldSourceChange(key, path) {
+  const next = normalizeDocPath(path)
+  schemaFields.value = schemaFields.value.map((f) =>
+    f.key === key ? { ...f, sourcePath: next } : f,
+  )
+  // 换来源后清空已选词条，避免残留不可用选项
+  if (fieldValues.value[key] !== undefined) {
+    fieldValues.value = {
+      ...fieldValues.value,
+      [key]: [],
+    }
+  }
+}
+
 function fieldValueOf(key) {
+  const field = schemaFields.value.find((f) => f.key === key)
+  if (field && isTitleSchemaField(field)) return title.value
+  if (field && isRemarkSchemaField(field)) return description.value
   return fieldValues.value[key]
 }
 
-function addExtraField() {
-  extraFields.value = [
-    ...extraFields.value,
-    {
-      id: newExtraFieldId(),
-      label: '自定义字段',
-      type: 'text',
-      value: '',
-    },
-  ]
-}
-
-function removeExtraField(id) {
-  extraFields.value = extraFields.value.filter((f) => f.id !== id)
-}
-
-function updateExtraField(id, patch) {
-  extraFields.value = extraFields.value.map((f) =>
-    f.id === id ? { ...f, ...patch } : f,
+function fieldValuesForSave() {
+  const custom = schemaFields.value.filter(
+    (f) => !isTitleSchemaField(f) && !isRemarkSchemaField(f),
   )
+  const raw = {}
+  for (const f of custom) {
+    if (Object.prototype.hasOwnProperty.call(fieldValues.value, f.key)) {
+      raw[f.key] = fieldValues.value[f.key]
+    }
+  }
+  return normalizeFieldValues(raw, custom)
 }
+
+const useSchemaForm = computed(() => schemaFields.value.length > 0)
 
 function initSlotValuesFromProps() {
   const indexEntries = glossaryIndexEntries.value
@@ -448,19 +465,22 @@ const heading = computed(() =>
   props.mode === 'edit' ? '编辑词条' : '新建词条',
 )
 
-const canSubmit = computed(
-  () =>
-    !!String(title.value || '').trim() &&
-    !!String(description.value || '').trim() &&
-    !busy.value,
-)
+const canSubmit = computed(() => {
+  if (busy.value) return false
+  if (!String(title.value || '').trim()) return false
+  const needDesc =
+    !useSchemaForm.value || schemaFields.value.some((f) => isRemarkSchemaField(f))
+  if (needDesc && !String(description.value || '').trim()) return false
+  return true
+})
 
 watch(
-  [canSubmit, busy],
+  [canSubmit, busy, useSchemaForm],
   () => {
     emit('update:ui', {
       canSubmit: canSubmit.value,
       busy: busy.value,
+      showDescSourceToggle: !useSchemaForm.value,
     })
   },
   { immediate: true },
@@ -497,7 +517,7 @@ async function confirm() {
         ? normalizeTermRefs(slotValues.value, refSources)
         : undefined,
       refSources: refSources.length ? refSources : undefined,
-      fieldValues: normalizeFieldValues(fieldValues.value, schemaFields.value),
+      fieldValues: fieldValuesForSave(),
       extraFields: normalizeExtraFields(extraFields.value),
     })
   } finally {
@@ -551,7 +571,10 @@ defineExpose({
         </select>
       </label>
 
-      <label class="ext-term-editor-field shrink-0">
+      <label
+        v-if="!useSchemaForm"
+        class="ext-term-editor-field shrink-0"
+      >
         <span class="ext-term-editor-label">标题</span>
         <input
           v-model="title"
@@ -582,10 +605,9 @@ defineExpose({
       </div>
 
       <div
-        v-if="schemaFields.length"
+        v-if="useSchemaForm"
         class="ext-term-schema-fields shrink-0"
       >
-        <div class="ext-term-schema-fields__title">基础字段</div>
         <label
           v-for="field in schemaFields"
           :key="field.key"
@@ -599,52 +621,18 @@ defineExpose({
             :nodes="glossaryTreeNodes"
             :host-term-title="title"
             :placeholder="field.label"
-            :show-source-picker="false"
-            :min-height="140"
+            :show-source-picker="true"
+            :min-height="field.type === 'markdown' ? 120 : 96"
             @update:model-value="updateFieldValue(field.key, $event)"
+            @update:source-path="onFieldSourceChange(field.key, $event)"
           />
         </label>
       </div>
 
-      <div class="ext-term-extra-fields shrink-0">
-        <div class="ext-term-schema-fields__head">
-          <span class="ext-term-schema-fields__title">本条额外字段</span>
-          <button
-            type="button"
-            class="ext-term-extra-add"
-            @click="addExtraField"
-          >
-            添加
-          </button>
-        </div>
-        <div
-          v-for="extra in extraFields"
-          :key="extra.id"
-          class="ext-term-extra-row"
-        >
-          <input
-            class="ext-term-editor-input"
-            :value="extra.label"
-            placeholder="字段名"
-            @input="updateExtraField(extra.id, { label: $event.target.value })"
-          >
-          <input
-            class="ext-term-editor-input"
-            :value="Array.isArray(extra.value) ? extra.value.join('，') : extra.value"
-            placeholder="内容"
-            @input="updateExtraField(extra.id, { value: $event.target.value })"
-          >
-          <button
-            type="button"
-            class="ext-term-extra-remove"
-            @click="removeExtraField(extra.id)"
-          >
-            删
-          </button>
-        </div>
-      </div>
-
-      <div class="flex min-h-[160px] flex-1 flex-col">
+      <div
+        v-else
+        class="flex min-h-[160px] flex-1 flex-col"
+      >
         <MarkdownField
           ref="mdFieldRef"
           v-model="description"
@@ -736,53 +724,10 @@ defineExpose({
   gap: 0.5rem;
 }
 
-.ext-term-schema-fields,
-.ext-term-extra-fields {
+.ext-term-schema-fields {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-}
-
-.ext-term-schema-fields__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.ext-term-schema-fields__title {
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted, #5a6b75);
-}
-
-.ext-term-extra-row {
-  display: grid;
-  grid-template-columns: 6.5rem minmax(0, 1fr) auto;
-  gap: 0.35rem;
-  align-items: center;
-}
-
-.ext-term-extra-add,
-.ext-term-extra-remove {
-  margin: 0;
-  padding: 0.2rem 0.45rem;
-  border: none;
-  background: transparent;
-  color: var(--muted, #5a6b75);
-  font: inherit;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-.ext-term-extra-add:hover {
-  color: var(--accent, #0d6e6e);
-}
-
-.ext-term-extra-remove:hover {
-  color: var(--danger, #b42318);
 }
 </style>
 

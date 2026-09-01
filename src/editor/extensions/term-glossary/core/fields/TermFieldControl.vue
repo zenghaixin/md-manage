@@ -18,7 +18,7 @@ const props = defineProps({
   label: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
   showSourcePicker: { type: Boolean, default: true },
-  minHeight: { type: Number, default: 140 },
+  minHeight: { type: Number, default: 120 },
 })
 
 const emit = defineEmits(['update:modelValue', 'update:sourcePath'])

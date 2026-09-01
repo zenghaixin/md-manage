@@ -17,6 +17,7 @@ import {
   getRightPanelHost,
   isUiGestureLocked,
   setActiveDocPath,
+  requestOpenRightPanel,
 } from '../editor/shellEvents'
 import {
   getRightPanelModule,
@@ -27,6 +28,8 @@ import {
 } from '../editor/rightPanelRegistry'
 import { appConfig, patchAppConfig } from '../composables/useAppConfig'
 import { useGlossaryStore } from '../stores/glossary'
+import { isGlossaryDefPath } from '../editor/extensions/term-glossary/core/shared/glossaryPaths'
+import { TERM_SCHEMA_PANEL_MODULE_ID } from '../editor/extensions/term-glossary/core/panel/glossarySchemaSidePanel'
 
 const { showToast } = useToast()
 const isMobile = useMediaQuery('(max-width: 767px)')
@@ -378,8 +381,13 @@ async function onAddFile(parentPath) {
   try {
     const data = await api.createFileIn(parentPath, trimmed)
     await refreshTree(data.path)
+    await refreshGlossaryPaths()
     showToast(`已创建：md/${data.path}`, 'success')
     if (isMobile.value) sidebarOpen.value = false
+    // 词条目录下新建入口：打开右侧通用字段，便于立刻改模板
+    if (isGlossaryDefPath(data.path) && String(data.path).endsWith('.md')) {
+      requestOpenRightPanel({ moduleId: TERM_SCHEMA_PANEL_MODULE_ID })
+    }
   } catch (err) {
     showToast(err.message, 'error')
   } finally {

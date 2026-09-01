@@ -46,6 +46,7 @@ defineEmits(['update:modelValue'])
   font-size: 0.8125rem;
   line-height: 1.5;
   resize: vertical;
+  max-height: 12rem;
 }
 
 .term-field-markdown:disabled {
