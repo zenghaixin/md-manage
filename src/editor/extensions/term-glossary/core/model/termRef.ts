@@ -111,6 +111,9 @@ export const TermRefNode = Node.create({
   addNodeView() {
     return ({ node, getPos, editor }) => {
       const title = String(node.attrs.title ?? '').trim()
+      /** 备注/描述 MarkdownField：term[] 为落盘引用，不提供「取消确认」 */
+      const hideUnconfirmClose = () =>
+        !!editor.view.dom.closest?.('.markdown-field')
 
       const dom = document.createElement('span')
       // atom NodeView 必须不可编辑，否则光标会掉进节点内部导致后续无法输入
@@ -150,6 +153,9 @@ export const TermRefNode = Node.create({
           : `${TERM_REF_CLASS} ${termDashClass('invalid')}`
         if (valid) dom.removeAttribute('title')
         else dom.title = '没有对应词条，点击可新建'
+        if (hideUnconfirmClose()) {
+          closeBtn.hidden = true
+        }
       }
       syncValid(title, typeof getPos === 'function' ? getPos() : null)
 
@@ -158,6 +164,7 @@ export const TermRefNode = Node.create({
       closeBtn.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
+        if (hideUnconfirmClose()) return
         const pos = typeof getPos === 'function' ? getPos() : null
         if (pos == null || typeof pos !== 'number') return
         const current = editor.state.doc.nodeAt(pos)
@@ -176,7 +183,9 @@ export const TermRefNode = Node.create({
         tr.setMeta('termGlossaryUnconfirm', true)
         editor.view.dispatch(tr)
       })
-      dom.appendChild(closeBtn)
+      if (!hideUnconfirmClose()) {
+        dom.appendChild(closeBtn)
+      }
 
       let unsub: (() => void) | null = null
       try {

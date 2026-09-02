@@ -1,96 +1,41 @@
 {
   "list": [
     "核爆",
-    "结界魔法",
     "扰乱雷击",
-    "吐息",
-    "无咏唱魔法",
-    "治愈魔法",
-    "重力魔法"
+    "治愈魔法"
   ],
   "terms": {
-    "无咏唱魔法": {
-      "title": "无咏唱魔法",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "省略咏唱、以意象直接成型的魔法。term[鲁迪乌斯]因前世记忆而天生掌握，是他幼年碾压同龄魔法师的根本原因。",
-      "ignoreContexts": [],
-      "formerTitles": [],
-      "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
-      "extraFields": []
-    },
     "扰乱雷击": {
       "title": "扰乱雷击",
       "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "term[鲁迪乌斯]的招牌进攻魔法：先以土墙扰乱视线，再以高压雷击贯穿。被评价为term[圣级]以上的实战技。",
+      "description": "土墙扰乱后以雷击贯穿；term[鲁迪乌斯]招牌技。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
       "refSources": [],
-      "fieldValues": {},
       "extraFields": []
     },
     "核爆": {
       "title": "核爆",
       "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "将火、土、风等属性压缩至极限后释放的大范围毁灭魔法。破坏力逼近term[神级]，是鲁迪少数能与列强正面对轰的手段。",
+      "description": "多属性压缩后的大范围毁灭魔法；破坏力逼近term[神级]。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
       "refSources": [],
-      "fieldValues": {},
       "extraFields": []
     },
     "治愈魔法": {
       "title": "治愈魔法",
       "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "米里斯体系的恢复与解毒魔法。term[杰尼斯]出身此道；高级治愈甚至能处理断肢，但对灵魂损伤与失智几乎无效。",
+      "description": "米里斯体系恢复魔法；term[杰尼斯]出身此道。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
       "refSources": [],
-      "fieldValues": {},
-      "extraFields": []
-    },
-    "结界魔法": {
-      "title": "结界魔法",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "用于隔音、防护与封印的辅助系。term[佩尔吉乌斯]的要塞、迷宫层门、以及贵族宅邸的隐私结界都属于此类。",
-      "ignoreContexts": [],
-      "formerTitles": [],
-      "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
-      "extraFields": []
-    },
-    "重力魔法": {
-      "title": "重力魔法",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "操控重力的古魔法残响，极为稀有。与term[始源魔导具]组合时，可压制龙级生物的行动。",
-      "ignoreContexts": [],
-      "formerTitles": [],
-      "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
-      "extraFields": []
-    },
-    "吐息": {
-      "title": "吐息",
-      "sourcePath": "词条/魔法/魔法体系.md",
-      "description": "龙族与部分魔兽的本能魔法，将魔力直接喷为破坏性吐息。term[奥尔斯特德]的龙神之体亦能释放同类权能。",
-      "ignoreContexts": [],
-      "formerTitles": [],
-      "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
       "extraFields": []
     }
   }

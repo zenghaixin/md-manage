@@ -18,7 +18,7 @@ import { extractGlossarySubtree } from '../shared/termRefSlots'
 import {
   emptyTermSchema,
   defaultTermSchemaFields,
-  makeFieldKey,
+  makeUniqueFieldLabel,
   normalizeSchemaField,
   normalizeTermSchema,
   saveTermSchema,
@@ -277,7 +277,6 @@ async function loadSchema(pathRel) {
       }
     }
     fields.value = schema.fields.map((f) => ({
-      key: f.key,
       label: f.label,
       type: f.type === 'markdown' || f.type === 'term' ? f.type : 'text',
       sourcePath: f.sourcePath || '',
@@ -309,13 +308,11 @@ function openAddPicker() {
 function addField(kind) {
   const type =
     kind === 'markdown' || kind === 'term' || kind === 'text' ? kind : 'text'
-  const keys = fields.value.map((f) => f.key)
-  const label = '新字段'
+  const labels = fields.value.map((f) => f.label)
   fields.value = [
     ...fields.value,
     {
-      key: makeFieldKey(label, keys),
-      label,
+      label: makeUniqueFieldLabel('新字段', labels),
       type,
       sourcePath: '',
     },
@@ -331,11 +328,8 @@ function removeField(index) {
 function onLabelChange(index) {
   const row = fields.value[index]
   if (!row) return
-  const others = fields.value.filter((_, i) => i !== index).map((f) => f.key)
-  // 仅当 key 仍像自动生成时跟随 label
-  if (!row.key || row.key.startsWith('新字段') || row.key === makeFieldKey(row.label, [])) {
-    row.key = makeFieldKey(row.label, others)
-  }
+  const others = fields.value.filter((_, i) => i !== index).map((f) => f.label)
+  row.label = makeUniqueFieldLabel(row.label || '新字段', others)
   dirty.value = true
 }
 
@@ -368,8 +362,7 @@ async function save() {
             ? f.type
             : 'text'
         return normalizeSchemaField({
-          key: String(f.key || '').trim(),
-          label: String(f.label || '').trim() || String(f.key || '').trim(),
+          label: String(f.label || '').trim(),
           type,
           sourcePath: type === 'term' ? f.sourcePath : '',
         })
@@ -377,7 +370,6 @@ async function save() {
       .filter(Boolean)
     const saved = await saveTermSchema(path, schema)
     fields.value = saved.fields.map((f) => ({
-      key: f.key,
       label: f.label,
       type: f.type === 'markdown' || f.type === 'term' ? f.type : 'text',
       sourcePath: f.sourcePath || '',
@@ -479,7 +471,7 @@ onBeforeUnmount(() => {
 
       <div
         v-for="(field, index) in fields"
-        :key="`${field.key}:${field.type}`"
+        :key="`${field.label}:${field.type}:${index}`"
         class="glossary-schema-editor__row"
         :class="{
           'is-drag-source': dragging && dragFromIndex === index,

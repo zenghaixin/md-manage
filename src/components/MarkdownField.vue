@@ -278,6 +278,14 @@ defineExpose({ flush, toggleView, viewMode })
   color: var(--ink, #1a2830);
 }
 
+.markdown-field__preview :deep(.ext-term-ref-close) {
+  display: none !important;
+}
+
+.markdown-field__preview :deep(.ext-term-ref) {
+  padding-right: 0;
+}
+
 .markdown-field__preview :deep(.tiptap > *:first-child) {
   margin-top: 0;
 }

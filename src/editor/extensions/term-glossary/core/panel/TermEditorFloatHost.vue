@@ -19,7 +19,6 @@ const props = defineProps({
   initialSourcePath: { type: String, default: '' },
   initialRefs: { type: Object, default: () => ({}) },
   initialRefSources: { type: Array, default: () => [] },
-  initialFieldValues: { type: Object, default: () => ({}) },
   initialExtraFields: { type: Array, default: () => [] },
   remarkId: { type: String, default: '' },
   floatLeft: { type: Number, default: null },
@@ -149,7 +148,6 @@ defineExpose({
       :initial-source-path="initialSourcePath"
       :initial-refs="initialRefs"
       :initial-ref-sources="initialRefSources"
-      :initial-field-values="initialFieldValues"
       :initial-extra-fields="initialExtraFields"
       :show-heading="false"
       :show-actions="false"

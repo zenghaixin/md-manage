@@ -10,17 +10,16 @@ export const SCHEMA_VERSION = 1
 
 const FIELD_KINDS = new Set(['text', 'markdown', 'term'])
 
-/** @type {Record<string, Array<{ key: string, label: string, type: FieldType, sourcePath?: string }>>} */
+/** @type {Record<string, Array<{ label: string, type: FieldType, sourcePath?: string }>>} */
 export const SCHEMA_PRESETS = {
   武器: [
-    { key: 'attack', label: '攻击力', type: 'text' },
-    { key: 'bonus', label: '属性加成', type: 'text' },
-    { key: 'cost', label: '消耗', type: 'text' },
+    { label: '攻击力', type: 'text' },
+    { label: '属性加成', type: 'text' },
+    { label: '消耗', type: 'text' },
   ],
   历史事件: [
-    { key: 'when', label: '时间节点', type: 'text' },
+    { label: '时间节点', type: 'text' },
     {
-      key: 'participants',
       label: '参与人物',
       type: 'term',
       sourcePath: '词条/角色/人物.md',
@@ -28,13 +27,11 @@ export const SCHEMA_PRESETS = {
   ],
   人物: [
     {
-      key: 'weapons',
       label: '武器',
       type: 'term',
       sourcePath: '词条/物品/武器.md',
     },
     {
-      key: 'events',
       label: '参与事件',
       type: 'term',
       sourcePath: '词条/世界观/历史事件.md',
@@ -51,8 +48,8 @@ export function defaultSchema() {
   return normalizeSchema({
     version: SCHEMA_VERSION,
     fields: [
-      { key: '标题', label: '标题', type: 'text' },
-      { key: '备注', label: '备注', type: 'markdown' },
+      { label: '标题', type: 'text' },
+      { label: '备注', type: 'markdown' },
     ],
   })
 }
@@ -66,11 +63,12 @@ function normalizeSourcePath(raw) {
 
 export function normalizeSchemaField(raw) {
   if (!raw || typeof raw !== 'object') return null
-  const key = String(raw.key || '')
-    .trim()
-    .replace(/\s+/g, '_')
-  const label = String(raw.label || '').trim() || key
-  if (!key) return null
+  const label =
+    String(raw.label || '').trim() ||
+    String(raw.key || '')
+      .trim()
+      .replace(/\s+/g, '_')
+  if (!label) return null
   const sourcePath = normalizeSourcePath(raw.sourcePath)
   let typeRaw = String(raw.type || '').trim()
   if (typeRaw === 'number') typeRaw = 'text'
@@ -79,8 +77,8 @@ export function normalizeSchemaField(raw) {
   if (!FIELD_KINDS.has(String(raw.type || '').trim()) && sourcePath) {
     type = 'term'
   }
-  /** @type {{ key: string, label: string, type: string, sourcePath?: string }} */
-  const field = { key, label, type }
+  /** @type {{ label: string, type: string, sourcePath?: string }} */
+  const field = { label, type }
   if (type === 'term' && sourcePath) field.sourcePath = sourcePath
   return field
 }
@@ -92,8 +90,8 @@ export function normalizeSchema(raw) {
   const list = Array.isArray(data.fields) ? data.fields : []
   for (const item of list) {
     const field = normalizeSchemaField(item)
-    if (!field || seen.has(field.key)) continue
-    seen.add(field.key)
+    if (!field || seen.has(field.label)) continue
+    seen.add(field.label)
     fields.push(field)
   }
   return { version: SCHEMA_VERSION, fields }
@@ -188,45 +186,18 @@ export function createSchemaStore(metaAbs) {
   }
 }
 
-export function normalizeFieldValues(raw, fields = []) {
-  const out = {}
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
-  const fieldMap = new Map(
-    (fields || []).map((f) => [f.key, f]).filter((x) => x[0]),
-  )
-  for (const [key, val] of Object.entries(raw)) {
-    const k = String(key || '').trim()
-    if (!k) continue
-    const field = fieldMap.get(k)
-    const asTerm = field
-      ? field.type === 'term' || !!normalizeSourcePath(field.sourcePath)
-      : Array.isArray(val)
-    if (asTerm) {
-      out[k] = Array.isArray(val)
-        ? val.map((s) => String(s ?? '').trim()).filter(Boolean)
-        : String(val ?? '')
-            .split(/[,，]/)
-            .map((s) => s.trim())
-            .filter(Boolean)
-    } else {
-      out[k] = val == null ? '' : String(val)
-    }
-  }
-  return out
-}
-
 export function normalizeExtraFields(raw) {
   if (!Array.isArray(raw)) return []
   const out = []
   const seen = new Set()
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
-    const id =
+    const label =
+      String(item.label || '').trim() ||
       String(item.id || '').trim() ||
-      `extra_${Math.random().toString(36).slice(2, 9)}`
-    if (seen.has(id)) continue
-    seen.add(id)
-    const label = String(item.label || '').trim() || '自定义字段'
+      '自定义字段'
+    if (seen.has(label)) continue
+    seen.add(label)
     const sourcePath = normalizeSourcePath(item.sourcePath)
     let typeRaw = String(item.type || '').trim()
     if (typeRaw === 'number') typeRaw = 'text'
@@ -242,7 +213,7 @@ export function normalizeExtraFields(raw) {
     } else {
       value = String(item.value ?? '')
     }
-    const row = { id, label, type, value }
+    const row = { label, type, value }
     if (type === 'term' && sourcePath) row.sourcePath = sourcePath
     out.push(row)
   }

@@ -672,6 +672,7 @@ async function scanMarkdownTerms(existingTerms = {}) {
           normalizeRefSources(prev?.refSources),
         ),
         refSources: normalizeRefSources(prev?.refSources),
+        extraFields: Array.isArray(prev?.extraFields) ? prev.extraFields : [],
       }
     }
   }
@@ -818,10 +819,6 @@ app.put('/api/glossary', async (req, res) => {
           normalizeRefSources(term?.refSources),
         ),
         refSources: normalizeRefSources(term?.refSources),
-        fieldValues:
-          term?.fieldValues && typeof term.fieldValues === 'object'
-            ? term.fieldValues
-            : {},
         extraFields: Array.isArray(term?.extraFields) ? term.extraFields : [],
       }
     }
@@ -868,7 +865,7 @@ app.patch('/api/glossary/file', async (req, res) => {
     const data = await readGlossaryFile()
     const lookup = glossaryLookupFrom(data)
     const nextTerms = { ...data.terms }
-    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[], refs: Record<string, string[]>, refSources: string[], fieldValues: object, extraFields: object[] }>} */
+    /** @type {Record<string, { ignoreContexts: string[], formerTitles: string[], pendingManualConfirm: object[], refs: Record<string, string[]>, refSources: string[], extraFields: object[] }>} */
     const preserved = {}
 
     for (const [key, term] of Object.entries(nextTerms)) {
@@ -882,10 +879,6 @@ app.patch('/api/glossary/file', async (req, res) => {
           ),
           refs: normalizeTermRefsForLookup(term.refs, refSources, lookup),
           refSources,
-          fieldValues:
-            term.fieldValues && typeof term.fieldValues === 'object'
-              ? term.fieldValues
-              : {},
           extraFields: Array.isArray(term.extraFields) ? term.extraFields : [],
         }
         delete nextTerms[key]
@@ -944,11 +937,6 @@ app.patch('/api/glossary/file', async (req, res) => {
           lookup,
         ),
         refSources,
-        fieldValues:
-          fromPrev?.fieldValues ||
-          fromData?.fieldValues ||
-          fromOld?.fieldValues ||
-          {},
         extraFields:
           fromPrev?.extraFields ||
           fromData?.extraFields ||
@@ -994,15 +982,12 @@ app.patch('/api/glossary/file', async (req, res) => {
         }
       }
       const latestHasFields =
-        Object.keys(latestTerm.fieldValues || {}).length > 0 ||
-        (Array.isArray(latestTerm.extraFields) && latestTerm.extraFields.length > 0)
+        Array.isArray(latestTerm.extraFields) && latestTerm.extraFields.length > 0
       const nextHasFields =
-        Object.keys(nextTerm.fieldValues || {}).length > 0 ||
-        (Array.isArray(nextTerm.extraFields) && nextTerm.extraFields.length > 0)
+        Array.isArray(nextTerm.extraFields) && nextTerm.extraFields.length > 0
       if (latestHasFields && !nextHasFields) {
         nextTerms[title] = {
           ...nextTerms[title],
-          fieldValues: latestTerm.fieldValues || {},
           extraFields: Array.isArray(latestTerm.extraFields)
             ? latestTerm.extraFields
             : [],

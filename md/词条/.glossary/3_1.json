@@ -11,73 +11,116 @@
     "菲托亚转移事件": {
       "title": "菲托亚转移事件",
       "sourcePath": "词条/世界观/历史事件.md",
-      "description": "term[菲托亚领]突然被巨大魔法传送阵覆盖，领民被分散抛到世界各地。term[鲁迪乌斯]、term[艾莉丝]落到term[魔大陆]，term[希露菲]落到王都，term[杰尼斯]坠入迷宫最深层。是故事前半的分水岭。",
+      "description": "领地被传送阵覆盖，领民分散世界各地；故事前半分水岭。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
-      "extraFields": []
-    },
-    "拉普拉斯战役": {
-      "title": "拉普拉斯战役",
-      "sourcePath": "词条/世界观/历史事件.md",
-      "description": "约五百年前魔神term[拉普拉斯]对人类阵营发动的大战。龙神、技神与多位列强参战，战后超族被诅咒，term[苏帕迪亚族]几乎灭绝。",
-      "ignoreContexts": [],
-      "formerTitles": [],
-      "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "鲁迪乌斯",
+          "艾莉丝",
+          "保罗",
+          "希露菲",
+          "基列奴"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
       "extraFields": []
     },
     "贝加利特旅行": {
       "title": "贝加利特旅行",
       "sourcePath": "词条/世界观/历史事件.md",
-      "description": "term[鲁迪乌斯]、term[艾莉丝]与term[卢德格尔]组成「term[贝加利特旅行]」，自term[魔大陆]穿越term[红龙山脉]返回人界的三年旅途。三人的羁绊与战斗力都在此间成型。",
+      "description": "自term[魔大陆]返回人界的三年旅途。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "鲁迪乌斯",
+          "艾莉丝",
+          "卢德格尔"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
       "extraFields": []
     },
     "米里斯迷宫攻略": {
       "title": "米里斯迷宫攻略",
       "sourcePath": "词条/世界观/历史事件.md",
-      "description": "为救出term[杰尼斯]而进行的深层迷宫探索。term[保罗]在此战死，term[鲁迪乌斯]首次面对「怎么努力也无法挽回」的死别。",
+      "description": "救出term[杰尼斯]的深层迷宫战；term[保罗]战死于此。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "鲁迪乌斯",
+          "保罗",
+          "卢德格尔"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
       "extraFields": []
     },
-    "阿斯拉王位继承战": {
-      "title": "阿斯拉王位继承战",
+    "拉普拉斯战役": {
+      "title": "拉普拉斯战役",
       "sourcePath": "词条/世界观/历史事件.md",
-      "description": "term[亚莉艾尔]与第一王子一派的夺位之战。term[水神蕾达]等列强级战力卷入，战局牵动整个中央大陆的贵族秩序。",
+      "description": "约五百年前的大战；term[苏帕迪亚族]因此被诅咒。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "奥尔斯特德",
+          "卢德格尔"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
       "extraFields": []
     },
     "龙神与人神的对峙": {
       "title": "龙神与人神的对峙",
       "sourcePath": "词条/世界观/历史事件.md",
-      "description": "贯穿term[六面世界]史的隐线：term[奥尔斯特德]以轮回般的时间跨度猎杀term[人神]的使徒，而人神则不断挑选转生者作为棋子。term[鲁迪乌斯]被同时拉入双方的棋盘。",
+      "description": "term[奥尔斯特德]与term[人神]跨越轮回的暗战；term[鲁迪乌斯]被卷入棋局。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "奥尔斯特德",
+          "鲁迪乌斯",
+          "人神"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
+      "extraFields": []
+    },
+    "阿斯拉王位继承战": {
+      "title": "阿斯拉王位继承战",
+      "sourcePath": "词条/世界观/历史事件.md",
+      "description": "term[亚莉艾尔]夺位之战；term[水神蕾达]等强者卷入。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "希露菲",
+          "亚莉艾尔",
+          "水神蕾达"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
       "extraFields": []
     }
   }

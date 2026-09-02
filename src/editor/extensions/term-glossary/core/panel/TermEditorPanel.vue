@@ -34,8 +34,8 @@ import {
   fetchTermSchema,
   isRemarkSchemaField,
   isTitleSchemaField,
+  isTermSchemaField,
   normalizeExtraFields,
-  normalizeFieldValues,
 } from '../shared/termSchema'
 
 const props = defineProps({
@@ -50,9 +50,7 @@ const props = defineProps({
   initialRefs: { type: Object, default: () => ({}) },
   /** 编辑时预填各槽位数据源 id */
   initialRefSources: { type: Array, default: () => [] },
-  /** 编辑时预填文件级字段值 */
-  initialFieldValues: { type: Object, default: () => ({}) },
-  /** 编辑时预填本条额外字段 */
+  /** 编辑时预填本条额外字段（含 schema 文本字段） */
   initialExtraFields: { type: Array, default: () => [] },
   showHeading: { type: Boolean, default: true },
   /** 是否在面板内渲染取消/确认（浮层宿主可改到 footer） */
@@ -92,8 +90,8 @@ const loadingPaths = ref({})
 const glossaryTreeNodes = ref([])
 /** @type {import('vue').Ref<import('../shared/termSchema').TermSchemaField[]>} */
 const schemaFields = ref([])
-/** @type {import('vue').Ref<import('../shared/termSchema').TermFieldValues>} */
-const fieldValues = ref({})
+/** schema 文本字段（非标题/备注）填值，落盘进 extraFields */
+const textSchemaValues = ref({})
 /** @type {import('vue').Ref<import('../shared/termSchema').TermExtraField[]>} */
 const extraFields = ref([])
 
@@ -112,14 +110,20 @@ function resolveEntryPathForRefSlots() {
   )
 }
 
-function initFieldValuesFromProps() {
-  fieldValues.value = normalizeFieldValues(
-    props.initialFieldValues,
-    schemaFields.value,
-  )
+function initExtraFieldsFromProps() {
   extraFields.value = normalizeExtraFields(props.initialExtraFields).map(
     (f) => ({ ...f }),
   )
+}
+
+function initTextSchemaFromExtra() {
+  const next = {}
+  for (const field of schemaFields.value) {
+    if (field.type !== 'text' || isTitleSchemaField(field)) continue
+    const extra = extraFields.value.find((e) => e.label === field.label)
+    next[field.label] = String(extra?.value ?? '')
+  }
+  textSchemaValues.value = next
 }
 
 async function loadSchemaForEntry() {
@@ -131,76 +135,104 @@ async function loadSchemaForEntry() {
   try {
     const data = await fetchTermSchema(path)
     schemaFields.value = data.schema.fields
-    // 仅补齐缺省 key，不覆盖已有输入
-    const next = { ...fieldValues.value }
-    for (const field of schemaFields.value) {
-      if (Object.prototype.hasOwnProperty.call(next, field.key)) continue
-      next[field.key] = field.type === 'term' ? [] : ''
-    }
-    fieldValues.value = normalizeFieldValues(next, schemaFields.value)
+    initTextSchemaFromExtra()
   } catch (err) {
     console.warn('[term-editor] load schema failed:', err)
     schemaFields.value = []
   }
 }
 
-function updateFieldValue(key, value) {
-  const field = schemaFields.value.find((f) => f.key === key)
-  if (field && isTitleSchemaField(field)) {
-    title.value = Array.isArray(value) ? value.join('，') : String(value ?? '')
-  } else if (field && isRemarkSchemaField(field)) {
-    description.value = Array.isArray(value) ? value.join('，') : String(value ?? '')
-  }
-  fieldValues.value = {
-    ...fieldValues.value,
-    [key]: value,
-  }
-}
-
-function onFieldSourceChange(key, path) {
-  const next = normalizeDocPath(path)
-  schemaFields.value = schemaFields.value.map((f) =>
-    f.key === key ? { ...f, sourcePath: next } : f,
-  )
-  // 换来源后清空已选词条，避免残留不可用选项
-  if (fieldValues.value[key] !== undefined) {
-    fieldValues.value = {
-      ...fieldValues.value,
-      [key]: [],
-    }
-  }
-}
-
-function fieldValueOf(key) {
-  const field = schemaFields.value.find((f) => f.key === key)
+function fieldValueOf(label) {
+  const field = schemaFields.value.find((f) => f.label === label)
   if (field && isTitleSchemaField(field)) return title.value
   if (field && isRemarkSchemaField(field)) return description.value
-  return fieldValues.value[key]
+  if (field?.type === 'text') return textSchemaValues.value[label] ?? ''
+  return ''
 }
 
-function fieldValuesForSave() {
-  const custom = schemaFields.value.filter(
-    (f) => !isTitleSchemaField(f) && !isRemarkSchemaField(f),
-  )
-  const raw = {}
-  for (const f of custom) {
-    if (Object.prototype.hasOwnProperty.call(fieldValues.value, f.key)) {
-      raw[f.key] = fieldValues.value[f.key]
+function updateFieldValue(label, value) {
+  const field = schemaFields.value.find((f) => f.label === label)
+  if (field && isTitleSchemaField(field)) {
+    title.value = Array.isArray(value) ? value.join('，') : String(value ?? '')
+    return
+  }
+  if (field && isRemarkSchemaField(field)) {
+    description.value = Array.isArray(value)
+      ? value.join('，')
+      : String(value ?? '')
+    return
+  }
+  if (field?.type === 'text') {
+    textSchemaValues.value = {
+      ...textSchemaValues.value,
+      [label]: Array.isArray(value) ? value.join('，') : String(value ?? ''),
     }
   }
-  return normalizeFieldValues(raw, custom)
+}
+
+function termRefValueForField(field) {
+  const id = resolveSourceId(field.sourcePath || '')
+  return id ? slotValueList(id) : []
+}
+
+function updateTermRefForField(field, value) {
+  const id = resolveSourceId(field.sourcePath || '')
+  if (!id) return
+  if (!refSourceIds.value.includes(id)) {
+    refSourceIds.value = [...refSourceIds.value, id]
+  }
+  updateSlotValue(id, value)
+}
+
+function extraFieldsForSave() {
+  const schemaTextLabels = new Set(
+    schemaFields.value
+      .filter((f) => f.type === 'text' && !isTitleSchemaField(f))
+      .map((f) => f.label),
+  )
+  const manual = extraFields.value.filter((e) => !schemaTextLabels.has(e.label))
+  const fromSchema = schemaFields.value
+    .filter((f) => f.type === 'text' && !isTitleSchemaField(f))
+    .map((f) => ({
+      label: f.label,
+      type: 'text',
+      value: String(textSchemaValues.value[f.label] ?? ''),
+    }))
+  return normalizeExtraFields([...fromSchema, ...manual])
 }
 
 const useSchemaForm = computed(() => schemaFields.value.length > 0)
+
+const hasRemarkSchemaField = computed(() =>
+  schemaFields.value.some((f) => isRemarkSchemaField(f)),
+)
+
+const remarkSchemaField = computed(
+  () => schemaFields.value.find((f) => isRemarkSchemaField(f)) || null,
+)
+
+const schemaFieldsWithoutRemark = computed(() =>
+  schemaFields.value.filter((f) => !isRemarkSchemaField(f)),
+)
 
 function initSlotValuesFromProps() {
   const indexEntries = glossaryIndexEntries.value
   const entryPath = resolveEntryPathForRefSlots()
   let initialSources = normalizeRefSources(props.initialRefSources, indexEntries)
   if (!initialSources.length) {
-    initialSources = normalizeRefSources(props.initialRefs, indexEntries)
+    initialSources = normalizeRefSources(
+      Object.keys(props.initialRefs || {}),
+      indexEntries,
+    )
   }
-  if (!initialSources.length) {
+  const useSchema = schemaFields.value.length > 0
+  if (useSchema) {
+    for (const field of schemaFields.value) {
+      if (!isTermSchemaField(field)) continue
+      const id = resolveSourceIdByPath(field.sourcePath || '', indexEntries)
+      if (id && !initialSources.includes(id)) initialSources.push(id)
+    }
+  } else if (!initialSources.length) {
     initialSources = resolveDefaultRefSources(entryPath, indexEntries)
   }
   const initial = normalizeTermRefs(props.initialRefs, initialSources)
@@ -297,6 +329,10 @@ async function refreshAllSlotOptions(force = false) {
     if (!slot.path || slot.deleted) continue
     await loadOptionsForPath(slot.path, { force })
   }
+  for (const field of schemaFields.value) {
+    if (!isTermSchemaField(field) || !field.sourcePath) continue
+    await loadOptionsForPath(field.sourcePath, { force })
+  }
 }
 
 watch(
@@ -359,6 +395,56 @@ async function onSlotSourceChange(slotId, path) {
   await loadOptionsForPath(normalized, { force: true })
 }
 
+async function onTermSchemaSourceChange(fieldLabel, path) {
+  const normalized = normalizeDocPath(path)
+  const field = schemaFields.value.find((f) => f.label === fieldLabel)
+  if (!field || !isTermSchemaField(field)) return
+  const oldPath = normalizeDocPath(field.sourcePath || '')
+  if (oldPath === normalized) return
+
+  schemaFields.value = schemaFields.value.map((f) =>
+    f.label === fieldLabel ? { ...f, sourcePath: normalized } : f,
+  )
+
+  let newId = resolveSourceId(normalized)
+  if (!newId) {
+    await loadGlossaryIndexData()
+    newId = resolveSourceId(normalized)
+  }
+  if (!newId) {
+    await api.syncGlossary()
+    await glossaryStore.reload()
+    glossaryIndexEntries.value = glossaryStore.index.entries
+    newId = resolveSourceId(normalized)
+  }
+  if (!newId) return
+
+  const oldId = oldPath ? resolveSourceId(oldPath) : ''
+  if (oldId && refSourceIds.value.includes(oldId)) {
+    const stillUsed = schemaFields.value.some(
+      (f) =>
+        isTermSchemaField(f) &&
+        f.label !== fieldLabel &&
+        resolveSourceId(f.sourcePath || '') === oldId,
+    )
+    if (!stillUsed) {
+      refSourceIds.value = refSourceIds.value.filter((id) => id !== oldId)
+      const next = { ...slotValues.value }
+      delete next[oldId]
+      slotValues.value = next
+    }
+  }
+
+  if (!refSourceIds.value.includes(newId)) {
+    refSourceIds.value = [...refSourceIds.value, newId]
+  }
+  if (!Array.isArray(slotValues.value[newId])) {
+    slotValues.value = { ...slotValues.value, [newId]: [] }
+  }
+
+  await loadOptionsForPath(normalized, { force: true })
+}
+
 function resolvePreferredTarget(list) {
   const preferred =
     String(props.initialTargetPath || '').trim() || GLOSSARY_DEFAULT_FILE
@@ -415,9 +501,9 @@ onMounted(async () => {
   void loadEntryOptions()
   void loadGlossaryTree()
   await loadGlossaryIndexData()
-  initSlotValuesFromProps()
-  initFieldValuesFromProps()
+  initExtraFieldsFromProps()
   await loadSchemaForEntry()
+  initSlotValuesFromProps()
   void refreshAllSlotOptions(true)
 })
 
@@ -432,21 +518,19 @@ watch(
   () => targetPath.value,
   async () => {
     if (props.mode !== 'create' || !glossaryIndexEntries.value.length) return
-    initSlotValuesFromProps()
     await loadSchemaForEntry()
+    initSlotValuesFromProps()
     void refreshAllSlotOptions(true)
   },
 )
 
 watch(
-  () => [
-    props.initialFieldValues,
-    props.initialExtraFields,
-    props.initialSourcePath,
-  ],
+  () => [props.initialExtraFields, props.initialSourcePath],
   async () => {
-    initFieldValuesFromProps()
+    initExtraFieldsFromProps()
     await loadSchemaForEntry()
+    initTextSchemaFromExtra()
+    initSlotValuesFromProps()
   },
   { deep: true },
 )
@@ -475,12 +559,12 @@ const canSubmit = computed(() => {
 })
 
 watch(
-  [canSubmit, busy, useSchemaForm],
+  [canSubmit, busy, useSchemaForm, hasRemarkSchemaField],
   () => {
     emit('update:ui', {
       canSubmit: canSubmit.value,
       busy: busy.value,
-      showDescSourceToggle: !useSchemaForm.value,
+      showDescSourceToggle: !useSchemaForm.value || hasRemarkSchemaField.value,
     })
   },
   { immediate: true },
@@ -517,8 +601,7 @@ async function confirm() {
         ? normalizeTermRefs(slotValues.value, refSources)
         : undefined,
       refSources: refSources.length ? refSources : undefined,
-      fieldValues: fieldValuesForSave(),
-      extraFields: normalizeExtraFields(extraFields.value),
+      extraFields: extraFieldsForSave(),
     })
   } finally {
     busy.value = false
@@ -586,7 +669,7 @@ defineExpose({
       </label>
 
       <div
-        v-if="refSlotDefs.length"
+        v-if="refSlotDefs.length && !useSchemaForm"
         class="ext-term-ref-slots shrink-0"
       >
         <TermFieldTermRef
@@ -606,25 +689,54 @@ defineExpose({
 
       <div
         v-if="useSchemaForm"
-        class="ext-term-schema-fields shrink-0"
+        class="ext-term-schema-fields flex flex-col gap-3"
+        :class="hasRemarkSchemaField ? 'min-h-[160px] flex-1' : 'shrink-0'"
       >
         <label
-          v-for="field in schemaFields"
-          :key="field.key"
-          class="ext-term-editor-field"
+          v-for="field in schemaFieldsWithoutRemark"
+          :key="field.label"
+          class="ext-term-editor-field shrink-0"
         >
           <span class="ext-term-editor-label">{{ field.label }}</span>
           <TermFieldControl
             :kind="field.type || 'text'"
-            :model-value="fieldValueOf(field.key)"
+            :model-value="
+              isTermSchemaField(field)
+                ? termRefValueForField(field)
+                : fieldValueOf(field.label)
+            "
             :source-path="field.sourcePath || ''"
             :nodes="glossaryTreeNodes"
             :host-term-title="title"
             :placeholder="field.label"
             :show-source-picker="true"
             :min-height="field.type === 'markdown' ? 120 : 96"
-            @update:model-value="updateFieldValue(field.key, $event)"
-            @update:source-path="onFieldSourceChange(field.key, $event)"
+            @update:model-value="
+              isTermSchemaField(field)
+                ? updateTermRefForField(field, $event)
+                : updateFieldValue(field.label, $event)
+            "
+            @update:source-path="
+              isTermSchemaField(field)
+                ? onTermSchemaSourceChange(field.label, $event)
+                : undefined
+            "
+          />
+        </label>
+        <label
+          v-if="remarkSchemaField"
+          class="ext-term-editor-field flex min-h-0 flex-1 flex-col"
+        >
+          <span class="ext-term-editor-label">{{ remarkSchemaField.label }}</span>
+          <MarkdownField
+            ref="mdFieldRef"
+            v-model="description"
+            class="min-h-0 flex-1"
+            term-ref
+            :host-term-title="title"
+            :show-toggle="showDescToggle"
+            :placeholder="remarkSchemaField.label"
+            :min-height="120"
           />
         </label>
       </div>

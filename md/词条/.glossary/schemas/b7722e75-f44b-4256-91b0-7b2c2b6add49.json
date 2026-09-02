@@ -2,12 +2,10 @@
   "version": 1,
   "fields": [
     {
-      "key": "标题",
       "label": "标题",
       "type": "text"
     },
     {
-      "key": "备注",
       "label": "备注",
       "type": "markdown"
     }

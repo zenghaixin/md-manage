@@ -24,9 +24,7 @@ import {
 } from '../editor/extensions/term-glossary/core/shared/termRefSlots'
 import {
   normalizeExtraFields,
-  normalizeFieldValues,
   type TermExtraField,
-  type TermFieldValues,
 } from '../editor/extensions/term-glossary/core/shared/termSchema'
 import { queueTermFlash } from '../editor/extensions/term-glossary/core/shared/flashTerm'
 import { recordRecentTerm } from '../editor/extensions/term-glossary/core/shared/termRecent'
@@ -41,9 +39,7 @@ export interface GlossaryTerm {
   refs?: Record<string, string[]>
   /** 各槽位选用的数据源文件 id */
   refSources?: string[]
-  /** 文件级 schema 字段值 */
-  fieldValues?: TermFieldValues
-  /** 本条额外自定义字段 */
+  /** 本条额外自定义字段（含 schema 文本字段值） */
   extraFields?: TermExtraField[]
   ignoreContexts: string[]
   /** 曾用名：仅提示，不自动改文案 */
@@ -77,7 +73,6 @@ function normalizeTerm(
     sourcePath: String(raw.sourcePath ?? ''),
     refs: normalizeTermRefs(raw.refs, refSources),
     refSources,
-    fieldValues: normalizeFieldValues(raw.fieldValues),
     extraFields: normalizeExtraFields(raw.extraFields),
     ignoreContexts: normalizeIgnoreContexts(raw.ignoreContexts),
     formerTitles: normalizeFormerTitles(raw.formerTitles).filter((f) => f !== title),
@@ -118,7 +113,6 @@ function normGlossaryRelPath(sourcePath: string): string {
 function hasCatalogFields(term: GlossaryTerm | null | undefined): boolean {
   if (!term) return false
   if ((term.refSources?.length ?? 0) > 0) return true
-  if (Object.keys(term.fieldValues || {}).length > 0) return true
   if ((term.extraFields?.length ?? 0) > 0) return true
   return Object.values(term.refs || {}).some((list) => (list?.length ?? 0) > 0)
 }
@@ -142,7 +136,6 @@ function mergeFileCatalogFields(
       ...term,
       refSources,
       refs: normalizeTermRefs(p.refs, refSources),
-      fieldValues: normalizeFieldValues(p.fieldValues),
       extraFields: normalizeExtraFields(p.extraFields),
     }
   }
@@ -276,7 +269,6 @@ export const useGlossaryStore = defineStore('glossary', {
         sourcePath: sourcePath || prev?.sourcePath || '',
         refs: normalizeTermRefs(prev?.refs, normalizeRefSources(prev?.refSources, this.index.entries)),
         refSources: normalizeRefSources(prev?.refSources, this.index.entries),
-        fieldValues: normalizeFieldValues(prev?.fieldValues),
         extraFields: normalizeExtraFields(prev?.extraFields),
         ignoreContexts: normalizeIgnoreContexts(prev?.ignoreContexts),
         formerTitles: former,

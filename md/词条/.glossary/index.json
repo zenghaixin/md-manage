@@ -32,16 +32,16 @@
       "fileName": "历史事件"
     },
     {
-      "id": "7184a045-496f-4a02-a5cf-030a7e92cb3c",
-      "order": "4_0",
-      "path": "词条/物品/武器.md",
-      "fileName": "武器"
-    },
-    {
       "id": "56db4237-aa5b-4d50-96ab-fb6d786db996",
-      "order": "4_1",
+      "order": "4_0",
       "path": "词条/物品/防具.md",
       "fileName": "防具"
+    },
+    {
+      "id": "7184a045-496f-4a02-a5cf-030a7e92cb3c",
+      "order": "4_1",
+      "path": "词条/物品/武器.md",
+      "fileName": "武器"
     }
   ]
 }

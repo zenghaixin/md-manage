@@ -33,7 +33,7 @@ import { openTermEditorEditByTitle } from '../panel/termEditorPanel'
 import { openTermRemarkFloat } from '../shared/openTermRemarkFloat'
 import { lookupLiveTermRemarkId } from '../shared/termRemarkAccess'
 import { lookupTermRemarkInMarkdown } from '../shared/remoteTermRemark'
-import { fetchTermSchema } from '../shared/termSchema'
+import { buildTermDisplayFields } from '../shared/termDisplayFields'
 
 const DIALOG_W = 400
 const DIALOG_MAX_H = 500
@@ -75,46 +75,15 @@ const pathTitle = computed(() =>
   sourcePath.value ? `打开 ${sourcePath.value}` : '无来源路径',
 )
 
-function formatFieldValue(value) {
-  if (Array.isArray(value)) return value.filter(Boolean).join('、')
-  return String(value ?? '').trim()
-}
-
 async function refreshDisplayFields() {
-  const rows = []
-  const path = String(localTerm.value.sourcePath || '').trim()
-  const values = localTerm.value.fieldValues || {}
-  let schemaFields = []
-  if (path) {
-    try {
-      const data = await fetchTermSchema(path)
-      schemaFields = data.schema.fields || []
-    } catch {
-      schemaFields = []
-    }
-  }
-  for (const field of schemaFields) {
-    const text = formatFieldValue(values[field.key])
-    if (!text) continue
-    rows.push({ label: field.label, value: text })
-  }
-  // 无 schema 时仍展示已有 fieldValues
-  if (!schemaFields.length) {
-    for (const [key, val] of Object.entries(values)) {
-      const text = formatFieldValue(val)
-      if (!text) continue
-      rows.push({ label: key, value: text })
-    }
-  }
-  for (const extra of localTerm.value.extraFields || []) {
-    const text = formatFieldValue(extra.value)
-    if (!text) continue
-    rows.push({
-      label: String(extra.label || '自定义').trim() || '自定义',
-      value: text,
-    })
-  }
-  displayFields.value = rows
+  const store = useGlossaryStore()
+  displayFields.value = await buildTermDisplayFields({
+    sourcePath: String(localTerm.value.sourcePath || ''),
+    extraFields: localTerm.value.extraFields || [],
+    refs: localTerm.value.refs || {},
+    refSources: localTerm.value.refSources || [],
+    indexEntries: store.index?.entries || [],
+  })
 }
 
 /** 从当前文档定义块补全 remarkId */
@@ -244,6 +213,29 @@ function onDescClick(e) {
   props.onOpenTerm?.(nested, refEl)
 }
 
+function isKnownTermTitle(title) {
+  const t = String(title || '').trim()
+  if (!t) return false
+  try {
+    return !!useGlossaryStore().getTerm(t)
+  } catch {
+    return localTitles.value.includes(t)
+  }
+}
+
+function onFieldRefClick(e, title) {
+  e.preventDefault()
+  e.stopPropagation()
+  const t = String(title || '').trim()
+  if (!t) return
+  const anchor = e.currentTarget
+  if (!isKnownTermTitle(t)) {
+    void offerCreateMissingTerm(t)
+    return
+  }
+  props.onOpenTerm?.(t, anchor)
+}
+
 function onEdit() {
   const rect = floatRef.value?.getBoundingClientRect?.()
   openTermEditorEditByTitle({
@@ -303,7 +295,8 @@ function syncFromResolved(term, titles) {
     description: nextDesc,
     sourcePath: nextPath,
     remarkId: nextRemark,
-    fieldValues: term.fieldValues || {},
+    refs: term.refs || {},
+    refSources: term.refSources || [],
     extraFields: term.extraFields || [],
   }
   renderDesc()
@@ -373,7 +366,30 @@ defineExpose({
         class="ext-term-preview-field-row"
       >
         <span class="ext-term-preview-field-label">{{ row.label }}</span>
-        <span class="ext-term-preview-field-value">{{ row.value }}</span>
+        <span class="ext-term-preview-field-value">
+          <template v-if="row.kind === 'term'">
+            <span
+              v-for="(t, ti) in row.titles"
+              :key="`${t}:${ti}`"
+              class="ext-term-display-term-wrap"
+            >
+              <span
+                v-if="ti > 0"
+                class="ext-term-display-sep"
+              >、</span>
+              <span
+                :class="[
+                  TERM_REF_CLASS,
+                  { [TERM_REF_INVALID_CLASS]: !isKnownTermTitle(t) },
+                ]"
+                :data-term-title="t"
+                :title="isKnownTermTitle(t) ? undefined : '没有对应词条，点击可新建'"
+                @click="onFieldRefClick($event, t)"
+              >{{ t }}</span>
+            </span>
+          </template>
+          <template v-else>{{ row.value }}</template>
+        </span>
       </div>
     </div>
     <div
@@ -420,26 +436,49 @@ defineExpose({
 .ext-term-preview-fields {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.55rem 0.75rem 0;
+  gap: 0.18rem;
+  margin: 0.35rem 0.75rem 0;
+  padding: 0;
+  background: transparent;
 }
 
 .ext-term-preview-field-row {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
-  gap: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35em 0.55em;
   font-size: 0.8125rem;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .ext-term-preview-field-label {
+  flex: 0 0 auto;
+  min-width: 3.2em;
   color: var(--muted, #5a6b75);
-  font-weight: 600;
+  font-weight: 400;
+  opacity: 0.72;
+}
+
+.ext-term-preview-field-label::after {
+  content: ' ·';
+  opacity: 0.55;
 }
 
 .ext-term-preview-field-value {
+  flex: 1 1 12em;
+  min-width: 0;
   color: var(--ink, #1a2830);
   word-break: break-word;
+}
+
+.ext-term-preview-field-value :deep(.ext-term-ref) {
+  padding-right: 0;
+  font-weight: 500;
+}
+
+.ext-term-preview-field-value :deep(.ext-term-ref::before),
+.ext-term-preview-field-value :deep(.ext-term-ref::after) {
+  content: none;
 }
 
 .ext-term-preview-body {

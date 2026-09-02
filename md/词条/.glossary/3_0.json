@@ -1,13 +1,10 @@
 {
   "list": [
     "阿斯拉王国",
-    "布埃纳村",
     "菲托亚领",
-    "红龙山脉",
     "剑之圣域",
     "拉诺亚魔法大学",
     "六面世界",
-    "罗亚",
     "米里斯神圣国",
     "魔大陆",
     "希龙王国"
@@ -16,133 +13,108 @@
     "六面世界": {
       "title": "六面世界",
       "sourcePath": "词条/世界观/地点.md",
-      "description": "由人界、魔界、龙界、天界等构成的封闭宇宙。term[人神]与龙神的斗争在此循环，term[拉普拉斯战役]亦写在这套世界的年表上。",
+      "description": "由人界、魔界、龙界等构成的封闭宇宙。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
       "refSources": [],
-      "fieldValues": {},
-      "extraFields": []
-    },
-    "布埃纳村": {
-      "title": "布埃纳村",
-      "sourcePath": "词条/世界观/地点.md",
-      "description": "term[菲托亚领]边陲的农村，term[鲁迪乌斯]转生落地之处。term[保罗]在此任卫兵，term[希露菲]也在村中长大。",
-      "ignoreContexts": [],
-      "formerTitles": [],
-      "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
-      "extraFields": []
-    },
-    "菲托亚领": {
-      "title": "菲托亚领",
-      "sourcePath": "词条/世界观/地点.md",
-      "description": "term[阿斯拉王国]北部边领，term[格雷拉特家]伯雷亚斯一脉的领地。term[菲托亚转移事件]后领内人口锐减，成为搜索队与重建的起点。",
-      "ignoreContexts": [],
-      "formerTitles": [],
-      "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
-      "extraFields": []
-    },
-    "罗亚": {
-      "title": "罗亚",
-      "sourcePath": "词条/世界观/地点.md",
-      "description": "term[菲托亚领]的主城。term[艾莉丝]在此作为领主家女儿长大，term[基列奴]也曾作为家中剑术教师常驻。",
-      "ignoreContexts": [],
-      "formerTitles": [],
-      "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
       "extraFields": []
     },
     "阿斯拉王国": {
       "title": "阿斯拉王国",
       "sourcePath": "词条/世界观/地点.md",
-      "description": "中央大陆最强人类国家，贵族盘根错节。term[格雷拉特家]是其剑术贵族的一支，term[亚莉艾尔]的王位争夺亦在此展开。",
+      "description": "中央大陆强国；term[格雷拉特家]所属，term[菲托亚领]在其北部。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
       "refSources": [],
-      "fieldValues": {},
       "extraFields": []
     },
-    "拉诺亚魔法大学": {
-      "title": "拉诺亚魔法大学",
+    "菲托亚领": {
+      "title": "菲托亚领",
       "sourcePath": "词条/世界观/地点.md",
-      "description": "北方拉诺亚王国的最高魔法学府。term[鲁迪乌斯]、term[洛琪希]、term[赞恩]、term[希露菲]都曾在此求学或任教。",
+      "description": "term[阿斯拉王国]北部边领；term[菲托亚转移事件]发源地。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
-      "extraFields": []
-    },
-    "米里斯神圣国": {
-      "title": "米里斯神圣国",
-      "sourcePath": "词条/世界观/地点.md",
-      "description": "信仰圣神的宗教国家，term[杰尼斯]的故乡。迷宫与神殿并存，term[米里斯迷宫攻略]即发生于此。",
-      "ignoreContexts": [],
-      "formerTitles": [],
-      "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
+      "refs": {
+        "8279ebcf-2f1f-45aa-82ff-f2e97ce7311c": [
+          "菲托亚转移事件"
+        ]
+      },
+      "refSources": [
+        "8279ebcf-2f1f-45aa-82ff-f2e97ce7311c"
+      ],
       "extraFields": []
     },
     "魔大陆": {
       "title": "魔大陆",
       "sourcePath": "词条/世界观/地点.md",
-      "description": "人类难以定居的严酷大陆，魔族与魔兽横行。term[贝加利特旅行]的起点，term[洛琪希]的故乡term[米格路迪亚族]村落也在其中。",
+      "description": "严酷大陆；term[贝加利特旅行]起点，term[米格路迪亚族]故乡亦在此。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
+      "refs": {
+        "8279ebcf-2f1f-45aa-82ff-f2e97ce7311c": [
+          "贝加利特旅行",
+          "菲托亚转移事件"
+        ]
+      },
+      "refSources": [
+        "8279ebcf-2f1f-45aa-82ff-f2e97ce7311c"
+      ],
       "extraFields": []
     },
-    "红龙山脉": {
-      "title": "红龙山脉",
+    "拉诺亚魔法大学": {
+      "title": "拉诺亚魔法大学",
       "sourcePath": "词条/世界观/地点.md",
-      "description": "分隔term[魔大陆]与人界的巨型山脉，红龙盘踞。死亡行军穿越此地，是term[贝加利特旅行]中最危险的路段之一。",
+      "description": "北方魔法学府；term[鲁迪乌斯]、term[洛琪希]、term[赞恩]均曾在此。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
       "refSources": [],
-      "fieldValues": {},
       "extraFields": []
     },
-    "希龙王国": {
-      "title": "希龙王国",
+    "米里斯神圣国": {
+      "title": "米里斯神圣国",
       "sourcePath": "词条/世界观/地点.md",
-      "description": "以人偶术与工匠闻名的国家，term[赞恩]的母国。政治上接近term[阿斯拉王国]的卫星。",
+      "description": "宗教国家；term[米里斯迷宫攻略]发生地。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
-      "refs": {},
-      "refSources": [],
-      "fieldValues": {},
+      "refs": {
+        "8279ebcf-2f1f-45aa-82ff-f2e97ce7311c": [
+          "米里斯迷宫攻略"
+        ]
+      },
+      "refSources": [
+        "8279ebcf-2f1f-45aa-82ff-f2e97ce7311c"
+      ],
       "extraFields": []
     },
     "剑之圣域": {
       "title": "剑之圣域",
       "sourcePath": "词条/世界观/地点.md",
-      "description": "term[剑神流]的根据地，由term[剑神加尔]镇守。想要剑王以上的名号，几乎都必须来此挑战。",
+      "description": "term[剑神流]根据地；term[艾莉丝]曾前往挑战。",
       "ignoreContexts": [],
       "formerTitles": [],
       "pendingManualConfirm": [],
       "refs": {},
       "refSources": [],
-      "fieldValues": {},
+      "extraFields": []
+    },
+    "希龙王国": {
+      "title": "希龙王国",
+      "sourcePath": "词条/世界观/地点.md",
+      "description": "以人偶术闻名的国家；term[赞恩]的母国。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {},
+      "refSources": [],
       "extraFields": []
     }
   }

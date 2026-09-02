@@ -18,7 +18,6 @@ import {
 import {
   createSchemaStore,
   normalizeExtraFields,
-  normalizeFieldValues,
 } from './glossarySchema.js'
 
 export const GLOSSARY_ROOT = '词条'
@@ -76,7 +75,6 @@ export function createGlossaryStore(docsRoot, deps) {
         : [],
       refs,
       refSources,
-      fieldValues: normalizeFieldValues(term?.fieldValues),
       extraFields: normalizeExtraFields(term?.extraFields),
     }
   }
@@ -306,7 +304,6 @@ export function createGlossaryStore(docsRoot, deps) {
             : [],
           refs: normalizeTermRefs(term?.refs, term?.refSources || []),
           refSources: normalizeRefSources(term?.refSources, lookup),
-          fieldValues: normalizeFieldValues(term?.fieldValues),
           extraFields: normalizeExtraFields(term?.extraFields),
         }
       }
@@ -354,7 +351,6 @@ export function createGlossaryStore(docsRoot, deps) {
           : [],
         refs: normalizeTermRefs(term?.refs, refSources),
         refSources,
-        fieldValues: normalizeFieldValues(term?.fieldValues),
         extraFields: normalizeExtraFields(term?.extraFields),
       }
     }

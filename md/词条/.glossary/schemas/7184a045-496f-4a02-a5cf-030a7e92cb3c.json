@@ -2,18 +2,19 @@
   "version": 1,
   "fields": [
     {
-      "key": "标题",
       "label": "标题",
       "type": "text"
     },
     {
-      "key": "角色",
-      "label": "角色关系",
+      "label": "持有者",
       "type": "term",
       "sourcePath": "词条/角色/人物.md"
     },
     {
-      "key": "备注",
+      "label": "品阶",
+      "type": "text"
+    },
+    {
       "label": "备注",
       "type": "markdown"
     }

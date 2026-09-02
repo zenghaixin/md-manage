@@ -152,9 +152,82 @@ html.dark .ext-term-node.is-flash,
   user-select: none;
 }
 
+/* 结构化字段：安静的元信息，不做成卡片 */
+.ext-term-display-fields,
+.ext-term-preview-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12em;
+  margin: 0.2em 0 0;
+  padding: 0;
+  background: transparent;
+}
+
+.ext-term-display-field-row,
+.ext-term-preview-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35em 0.55em;
+  font-size: 0.84em;
+  line-height: 1.45;
+}
+
+.ext-term-display-field-label,
+.ext-term-preview-field-label {
+  flex: 0 0 auto;
+  min-width: 3.2em;
+  color: var(--muted, #5a6b75);
+  font-weight: 400;
+  opacity: 0.72;
+}
+
+.ext-term-display-field-label::after,
+.ext-term-preview-field-label::after {
+  content: ' ·';
+  opacity: 0.55;
+}
+
+.ext-term-display-field-value,
+.ext-term-preview-field-value {
+  flex: 1 1 12em;
+  min-width: 0;
+  color: inherit;
+  word-break: break-word;
+}
+
+.ext-term-display-term-wrap {
+  display: inline;
+}
+
+.ext-term-display-sep {
+  color: var(--muted, #5a6b75);
+  opacity: 0.45;
+  margin: 0 0.05em;
+}
+
+/* 字段区引用：蓝色可点，不加 []（描述里仍保留 []） */
+.ext-term-display-fields .ext-term-ref,
+.ext-term-preview-fields .ext-term-ref {
+  padding-right: 0;
+  font-weight: 500;
+}
+
+.ext-term-display-fields .ext-term-ref::before,
+.ext-term-display-fields .ext-term-ref::after,
+.ext-term-preview-fields .ext-term-ref::before,
+.ext-term-preview-fields .ext-term-ref::after {
+  content: none;
+}
+
+.ext-term-display-fields .ext-term-ref-close,
+.ext-term-preview-fields .ext-term-ref-close {
+  display: none !important;
+}
+
 .ext-term-desc {
   display: block;
-  margin-top: 0.15em;
+  margin-top: 0.45em;
   min-height: 0;
   font-weight: inherit;
   color: inherit;

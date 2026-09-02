@@ -32,6 +32,7 @@ import { openTermEditorEdit } from '../panel/termEditorPanel'
 import { confirmDeleteTermDefinition, replaceTermDefinition } from './termOps'
 import { serializeTermDescriptionFromNode } from './serializeDesc'
 import { confirmTitleInMarkdown, sanitizeTermTitle } from './syntax'
+import { buildTermDisplayFields } from '../shared/termDisplayFields'
 import { ensureTermGlossaryStyles } from '../shared/styles'
 
 /** 定义块内候选气泡来源（卸载时仅关此来源） */
@@ -44,6 +45,8 @@ let flashAnim = null
 let stopStoreWatch = null
 
 const descHost = ref(null)
+/** @type {import('vue').Ref<import('../shared/termDisplayFields').TermDisplayFieldRow[]>} */
+const displayFields = ref([])
 
 const titleText = computed(
   () =>
@@ -82,6 +85,28 @@ function renderDesc() {
   host.appendChild(desc)
 }
 
+async function refreshDisplayFields() {
+  let store
+  try {
+    store = useGlossaryStore()
+  } catch {
+    displayFields.value = []
+    return
+  }
+  const term = store.getTerm(titleText.value)
+  if (!term) {
+    displayFields.value = []
+    return
+  }
+  displayFields.value = await buildTermDisplayFields({
+    sourcePath: term.sourcePath || '',
+    extraFields: term.extraFields || [],
+    refs: term.refs || {},
+    refSources: term.refSources || [],
+    indexEntries: store.index?.entries || [],
+  })
+}
+
 function confirmCandidate(matchTitle, confirmTitle) {
   const pos = props.getPos()
   if (typeof pos !== 'number') return
@@ -103,6 +128,43 @@ function confirmCandidate(matchTitle, confirmTitle) {
   renderDesc()
 }
 
+function isKnownTermTitle(title) {
+  const t = String(title || '').trim()
+  if (!t) return false
+  try {
+    return !!useGlossaryStore().getTerm(t)
+  } catch {
+    return glossaryTitles().includes(t)
+  }
+}
+
+function selectSelf() {
+  const pos = props.getPos()
+  if (typeof pos !== 'number') return
+  props.editor.chain().focus().setNodeSelection(pos).run()
+}
+
+function onFieldRefClick(e, title) {
+  e.preventDefault()
+  e.stopPropagation()
+  // 先选中当前定义块，再打开被点引用的预览
+  selectSelf()
+  const t = String(title || '').trim()
+  if (!t) return
+  const anchor = e.currentTarget
+  if (!isKnownTermTitle(t)) {
+    void offerCreateMissingTerm(t, props.editor.view)
+    return
+  }
+  openTermPreview(t, anchor)
+}
+
+function onFieldsClick(e) {
+  // 点标签/空白也选中定义块；引用点击由 onFieldRefClick 处理
+  if (e.target?.closest?.('.ext-term-ref')) return
+  selectSelf()
+}
+
 function onDescClick(e) {
   const target = e.target
   const host = descHost.value
@@ -112,6 +174,7 @@ function onDescClick(e) {
   if (candidate && host.contains(candidate)) {
     e.preventDefault()
     e.stopPropagation()
+    selectSelf()
     const matchTitle =
       candidate.getAttribute('data-term-title') || candidate.textContent || ''
     const raw =
@@ -137,6 +200,7 @@ function onDescClick(e) {
   if (!refEl || !host.contains(refEl)) return
   e.preventDefault()
   e.stopPropagation()
+  selectSelf()
   const nested = (
     refEl.getAttribute('data-term-title') ||
     refEl.textContent ||
@@ -284,9 +348,17 @@ watch(
   },
 )
 
+watch(
+  () => titleText.value,
+  () => {
+    void refreshDisplayFields()
+  },
+)
+
 onMounted(() => {
   ensureTermGlossaryStyles()
   renderDesc()
+  void refreshDisplayFields()
   stopFlashRegister = registerTermFlashHandle({
     getTitle: () => String(props.node.attrs.title ?? ''),
     flash: triggerFlash,
@@ -294,6 +366,7 @@ onMounted(() => {
   try {
     stopStoreWatch = useGlossaryStore().$subscribe(() => {
       renderDesc()
+      void refreshDisplayFields()
     })
   } catch {
     // Pinia 未就绪
@@ -362,6 +435,45 @@ onBeforeUnmount(() => {
         >
           <AppIcon name="trash" :size="14" />
         </button>
+      </div>
+    </div>
+
+    <div
+      v-if="displayFields.length"
+      class="ext-term-display-fields"
+      contenteditable="false"
+      @click="onFieldsClick"
+    >
+      <div
+        v-for="(row, idx) in displayFields"
+        :key="`${row.label}:${idx}`"
+        class="ext-term-display-field-row"
+      >
+        <span class="ext-term-display-field-label">{{ row.label }}</span>
+        <span class="ext-term-display-field-value">
+          <template v-if="row.kind === 'term'">
+            <span
+              v-for="(t, ti) in row.titles"
+              :key="`${t}:${ti}`"
+              class="ext-term-display-term-wrap"
+            >
+              <span
+                v-if="ti > 0"
+                class="ext-term-display-sep"
+              >、</span>
+              <span
+                :class="[
+                  TERM_REF_CLASS,
+                  { [TERM_REF_INVALID_CLASS]: !isKnownTermTitle(t) },
+                ]"
+                :data-term-title="t"
+                :title="isKnownTermTitle(t) ? undefined : '没有对应词条，点击可新建'"
+                @click="onFieldRefClick($event, t)"
+              >{{ t }}</span>
+            </span>
+          </template>
+          <template v-else>{{ row.value }}</template>
+        </span>
       </div>
     </div>
 

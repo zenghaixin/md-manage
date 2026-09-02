@@ -1,4 +1,80 @@
 {
-  "list": [],
-  "terms": {}
+  "list": [
+    "超族三叉戟",
+    "恶魔之眼",
+    "龙神剑",
+    "魔力铠"
+  ],
+  "terms": {
+    "龙神剑": {
+      "title": "龙神剑",
+      "sourcePath": "词条/物品/武器.md",
+      "description": "term[奥尔斯特德]持有的神器级兵刃。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "奥尔斯特德"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
+      "extraFields": []
+    },
+    "魔力铠": {
+      "title": "魔力铠",
+      "sourcePath": "词条/物品/武器.md",
+      "description": "term[赞恩]与term[鲁迪乌斯]合作的魔力外骨骼。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "鲁迪乌斯",
+          "赞恩"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
+      "extraFields": []
+    },
+    "超族三叉戟": {
+      "title": "超族三叉戟",
+      "sourcePath": "词条/物品/武器.md",
+      "description": "term[卢德格尔]的爱枪，贯穿力极强。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "卢德格尔"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
+      "extraFields": []
+    },
+    "恶魔之眼": {
+      "title": "恶魔之眼",
+      "sourcePath": "词条/物品/武器.md",
+      "description": "term[岸里卡]借出的魔眼；term[鲁迪乌斯]曾用于迷宫探路。",
+      "ignoreContexts": [],
+      "formerTitles": [],
+      "pendingManualConfirm": [],
+      "refs": {
+        "5c369957-717f-4837-ab2e-3abaa30a2b17": [
+          "鲁迪乌斯",
+          "岸里卡"
+        ]
+      },
+      "refSources": [
+        "5c369957-717f-4837-ab2e-3abaa30a2b17"
+      ],
+      "extraFields": []
+    }
+  }
 }

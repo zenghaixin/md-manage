@@ -33,9 +33,7 @@ import { GLOSSARY_DEFAULT_FILE, isGlossaryDefPath, normalizeDocPath } from '../s
 import { normalizeRefSources, normalizeTermRefs } from '../shared/termRefSlots'
 import {
   normalizeExtraFields,
-  normalizeFieldValues,
   type TermExtraField,
-  type TermFieldValues,
 } from '../shared/termSchema'
 import {
   insertTermDefinition,
@@ -94,7 +92,6 @@ type ConfirmPayload = {
   refs?: Record<string, string[]>
   /** 各槽位选用的数据源 md */
   refSources?: string[]
-  fieldValues?: TermFieldValues
   extraFields?: TermExtraField[]
 }
 
@@ -148,9 +145,6 @@ function buildFloatHostProps(
   const initialRefs = editTitle
     ? normalizeTermRefs(store.getTerm(editTitle)?.refs, initialRefSources)
     : {}
-  const initialFieldValues = editTitle
-    ? normalizeFieldValues(store.getTerm(editTitle)?.fieldValues)
-    : {}
   const initialExtraFields = editTitle
     ? normalizeExtraFields(store.getTerm(editTitle)?.extraFields)
     : []
@@ -168,7 +162,6 @@ function buildFloatHostProps(
     initialSourcePath,
     initialRefs,
     initialRefSources,
-    initialFieldValues,
     initialExtraFields,
     remarkId,
     floatLeft: place.left,
@@ -265,7 +258,6 @@ async function persistCatalogFields(opts: {
   sourcePath: string
   refs?: Record<string, string[]>
   refSources?: string[]
-  fieldValues?: TermFieldValues
   extraFields?: TermExtraField[]
 }) {
   const store = useGlossaryStore()
@@ -278,10 +270,6 @@ async function persistCatalogFields(opts: {
     opts.refs !== undefined
       ? normalizeTermRefs(opts.refs, refSources)
       : normalizeTermRefs(prev?.refs, refSources)
-  const fieldValues =
-    opts.fieldValues !== undefined
-      ? normalizeFieldValues(opts.fieldValues)
-      : normalizeFieldValues(prev?.fieldValues)
   const extraFields =
     opts.extraFields !== undefined
       ? normalizeExtraFields(opts.extraFields)
@@ -295,7 +283,6 @@ async function persistCatalogFields(opts: {
           sourcePath: opts.sourcePath || prev.sourcePath || '',
           refs,
           refSources,
-          fieldValues,
           extraFields,
         }
       : {
@@ -304,7 +291,6 @@ async function persistCatalogFields(opts: {
           sourcePath: opts.sourcePath || '',
           refs,
           refSources,
-          fieldValues,
           extraFields,
           ignoreContexts: [],
           formerTitles: [],
@@ -321,7 +307,6 @@ async function handleCatalogConfirm(
     description: string
     refs?: Record<string, string[]>
     refSources?: string[]
-    fieldValues?: TermFieldValues
     extraFields?: TermExtraField[]
   },
 ) {
@@ -345,7 +330,6 @@ async function handleCatalogConfirm(
     sourcePath: sourcePath || '',
     refs: payload.refs,
     refSources: payload.refSources,
-    fieldValues: payload.fieldValues,
     extraFields: payload.extraFields,
   }
 
@@ -420,7 +404,6 @@ async function handleConfirm(payload: ConfirmPayload) {
       description,
       refs: payload.refs,
       refSources: payload.refSources,
-      fieldValues: payload.fieldValues,
       extraFields: payload.extraFields,
     })
     return
@@ -458,7 +441,6 @@ async function handleConfirm(payload: ConfirmPayload) {
           sourcePath,
           refs: payload.refs,
           refSources: payload.refSources,
-          fieldValues: payload.fieldValues,
           extraFields: payload.extraFields,
         })
       } else {
@@ -482,7 +464,6 @@ async function handleConfirm(payload: ConfirmPayload) {
           sourcePath,
           refs: payload.refs,
           refSources: payload.refSources,
-          fieldValues: payload.fieldValues,
           extraFields: payload.extraFields,
         })
         wrapCreateSelectionAsTermRef(s, title)
@@ -544,10 +525,6 @@ async function handleConfirm(payload: ConfirmPayload) {
         payload.refs !== undefined
           ? normalizeTermRefs(payload.refs, refSources)
           : normalizeTermRefs(prev?.refs, refSources)
-      const fieldValues =
-        payload.fieldValues !== undefined
-          ? normalizeFieldValues(payload.fieldValues)
-          : normalizeFieldValues(prev?.fieldValues)
       const extraFields =
         payload.extraFields !== undefined
           ? normalizeExtraFields(payload.extraFields)
@@ -555,14 +532,13 @@ async function handleConfirm(payload: ConfirmPayload) {
       const terms = {
         ...store.terms,
         [title]: prev
-          ? { ...prev, description, refs, refSources, fieldValues, extraFields }
+          ? { ...prev, description, refs, refSources, extraFields }
           : {
               title,
               description,
               sourcePath: '',
               refs,
               refSources,
-              fieldValues,
               extraFields,
               ignoreContexts: [],
               formerTitles: [],
@@ -596,10 +572,6 @@ async function handleConfirm(payload: ConfirmPayload) {
       payload.refs !== undefined
         ? normalizeTermRefs(payload.refs, refSources)
         : normalizeTermRefs(prev?.refs, refSources)
-    const fieldValues =
-      payload.fieldValues !== undefined
-        ? normalizeFieldValues(payload.fieldValues)
-        : normalizeFieldValues(prev?.fieldValues)
     const extraFields =
       payload.extraFields !== undefined
         ? normalizeExtraFields(payload.extraFields)
@@ -607,14 +579,13 @@ async function handleConfirm(payload: ConfirmPayload) {
     const terms = {
       ...store.terms,
       [title]: prev
-        ? { ...prev, description, refs, refSources, fieldValues, extraFields }
+        ? { ...prev, description, refs, refSources, extraFields }
         : {
             title,
             description,
             sourcePath: '',
             refs,
             refSources,
-            fieldValues,
             extraFields,
             ignoreContexts: [],
             formerTitles: [],

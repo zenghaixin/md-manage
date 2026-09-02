@@ -6,13 +6,13 @@
       "type": "text"
     },
     {
-      "label": "时间节点",
-      "type": "text"
-    },
-    {
-      "label": "参与人物",
+      "label": "熟练者",
       "type": "term",
       "sourcePath": "词条/角色/人物.md"
+    },
+    {
+      "label": "位阶",
+      "type": "text"
     },
     {
       "label": "备注",
